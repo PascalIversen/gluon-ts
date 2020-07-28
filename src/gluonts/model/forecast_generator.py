@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterator, List, Optional
 # Third-party imports
 import mxnet as mx
 import numpy as np
-
+import torch
 from gluonts.core.component import validated
 from gluonts.dataset.common import DataEntry
 from gluonts.dataset.field_names import FieldName
@@ -215,6 +215,57 @@ class SampleForecastGenerator(ForecastGenerator):
             for i, output in enumerate(outputs):
                 yield SampleForecast(
                     output,
+                    start_date=batch["forecast_start"][i],
+                    freq=freq,
+                    item_id=batch[FieldName.ITEM_ID][i]
+                    if FieldName.ITEM_ID in batch
+                    else None,
+                    info=batch["info"][i] if "info" in batch else None,
+                )
+            assert i + 1 == len(batch["forecast_start"])
+
+
+class PyTorchSampleForecastGenerator(ForecastGenerator):
+    @validated()
+    def __init__(self):
+        pass
+
+    def __call__(
+        self,
+        inference_data_loader: InferenceDataLoader,
+        prediction_net: torch.nn,
+        input_names: List[str],
+        freq: str,
+        output_transform: Optional[OutputTransform],
+        num_samples: Optional[int],
+        **kwargs
+    ) -> Iterator[Forecast]:
+        for batch in inference_data_loader:
+            inputs = [batch[k] for k in input_names]
+            outputs = prediction_net(*inputs).data.numpy()
+            if output_transform is not None:
+                outputs = output_transform(batch, outputs)
+            if num_samples:
+                num_collected_samples = outputs[0].shape[0]
+                collected_samples = [outputs]
+                while num_collected_samples < num_samples:
+                    outputs = prediction_net(*inputs).data.numpy()
+                    if output_transform is not None:
+                        outputs = output_transform(batch, outputs)
+                    collected_samples.append(outputs)
+                    num_collected_samples += outputs[0].shape[0]
+                outputs = [
+                    np.concatenate(
+                        s
+                    )  # TODO add [:num_samples] again, This is just to be able to predict a distribution free torch nn
+                    for s in zip(*collected_samples)
+                ]
+                assert len(outputs[0]) == num_samples
+            i = -1
+            for i, output in enumerate(outputs):
+                yield SampleForecast(
+                    # TODO Remoce expand_dims again. This is just to be able to predict a distribution free torch nn
+                    np.expand_dims(output, 0),
                     start_date=batch["forecast_start"][i],
                     freq=freq,
                     item_id=batch[FieldName.ITEM_ID][i]
