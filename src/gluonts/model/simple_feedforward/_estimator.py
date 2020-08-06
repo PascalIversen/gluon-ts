@@ -115,7 +115,7 @@ class SimpleFeedForwardEstimator(GenericEstimator):
         freq: str,
         prediction_length: int,
         sampling: bool = True,
-        trainer: Trainer = GluonTrainer(),
+        trainer: GluonTrainer = GluonTrainer(),
         num_hidden_dimensions: Optional[List[int]] = None,
         context_length: Optional[int] = None,
         distr_output: DistributionOutput = StudentTOutput(),
@@ -195,6 +195,9 @@ class SimpleFeedForwardEstimator(GenericEstimator):
     # the network should return at least one tensor that is used as a loss to minimize in the training loop.
     # several tensors can be returned for instance for analysis, see DeepARTrainingNetwork for an example.
     def create_training_network(self) -> GluonHybridBlock:
+
+        assert isinstance(self.trainer, GluonTrainer)
+
         return GluonHybridBlock(
             network=SimpleFeedForwardTrainingNetwork(
                 num_hidden_dimensions=self.num_hidden_dimensions,
@@ -203,13 +206,15 @@ class SimpleFeedForwardEstimator(GenericEstimator):
                 distr_output=self.distr_output,
                 batch_normalization=self.batch_normalization,
                 mean_scaling=self.mean_scaling,
-            )
+            ),
+            ctx=self.trainer.ctx,
         )
 
     # we now define how the prediction happens given that we are provided a
     # training network.
     def create_predictor(self, transformation, trained_network):
         assert isinstance(trained_network, GluonBlock)
+
         with trained_network.ctx:
             if self.sampling is True:
                 prediction_network = GluonHybridBlock(

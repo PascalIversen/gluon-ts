@@ -36,7 +36,7 @@ class GluonBlock(GenericNetwork):
         **kwargs
     ) -> None:
         super().__init__(network)
-        self.ctx = ctx
+        self.ctx = ctx if ctx is not None else get_mxnet_context()
         self.dtype = dtype
 
     def forward_pass_numpy(

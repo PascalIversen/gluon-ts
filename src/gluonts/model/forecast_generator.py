@@ -193,6 +193,7 @@ class SampleForecastGenerator(ForecastGenerator):
         num_samples: Optional[int],
         **kwargs
     ) -> Iterator[Forecast]:
+
         for batch in inference_data_loader:
             inputs = [batch[k] for k in input_names]
             outputs = prediction_net.forward_pass_numpy(*inputs)
