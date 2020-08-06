@@ -2,6 +2,8 @@ from pathlib import Path
 import numpy as np
 from typing import Any, Callable, Optional
 
+from gluonts.core.component import DType
+
 
 class GenericNetwork:
     """
@@ -34,7 +36,9 @@ class GenericNetwork:
         """
         return self.network(inputs)
 
-    def forward_pass_numpy(self, inputs) -> np.ndarray:
+    def forward_pass_numpy(
+        self, inputs, dtype: Optional[DType] = np.float32
+    ) -> np.ndarray:
         """
         Forward computation on the underlying network.
 
@@ -63,7 +67,7 @@ class GenericNetwork:
         """
         raise NotImplementedError
 
-    def get_forward_input_names(self):
+    def get_forward_input_names(self, network: "GenericNetwork"):
         """
 
         """

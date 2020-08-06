@@ -41,8 +41,10 @@ class GluonBlock(GenericNetwork):
         self.ctx = ctx
         self.dtype = dtype
 
-    def forward_pass_numpy(self, inputs) -> np.ndarray:
-        return self.network(inputs).asnumpy()
+    def forward_pass_numpy(
+        self, inputs, dtype: Optional[DType] = np.float32
+    ) -> np.ndarray:
+        return self.network(inputs).asnumpy(dtype=dtype)
 
     def get_forward_input_names(self):
         return get_hybrid_forward_input_names(self.network)
@@ -125,6 +127,9 @@ class GluonHybridBlock(GluonBlock):
             network = import_repr_block(path, name)
 
         return GluonHybridBlock(network=network, ctx=ctx, **kwargs)
+
+    def get_forward_input_names(self, network: "GluonHybridBlock"):
+        return get_hybrid_forward_input_names(network.network)
 
 
 class GluonSymbolBlock(GluonBlock):

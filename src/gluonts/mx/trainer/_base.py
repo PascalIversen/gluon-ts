@@ -29,7 +29,9 @@ import numpy as np
 from gluonts.core.component import get_mxnet_context, validated
 from gluonts.core.exception import GluonTSDataError, GluonTSUserError
 from gluonts.dataset.loader import TrainDataLoader, ValidationDataLoader
+from gluonts.generic_network import GenericNetwork
 from gluonts.gluonts_tqdm import tqdm
+from gluonts.mx.block.gluon_block import GluonBlock
 from gluonts.support.util import HybridContext
 
 # Relative imports
@@ -46,7 +48,6 @@ from .model_iteration_averaging import (
 )
 
 logger = logging.getLogger("gluonts").getChild("trainer")
-
 
 MODEL_ARTIFACT_FILE_NAME = "model"
 STATE_ARTIFACT_FILE_NAME = "state"
@@ -68,6 +69,21 @@ def loss_value(loss: mx.metric.Loss) -> float:
 
 
 class Trainer:
+    """
+
+    """
+
+    def __call__(
+        self,
+        network: GenericNetwork,
+        input_names: List[str],
+        train_iter: TrainDataLoader,
+        validation_iter: Optional[ValidationDataLoader] = None,
+    ) -> None:  # TODO: we may want to return some training information here
+        pass
+
+
+class GluonTrainer(Trainer):
     r"""
     A trainer specifies how a network is going to be trained.
 
@@ -172,11 +188,14 @@ class Trainer:
 
     def __call__(
         self,
-        net: nn.HybridBlock,
+        network: GluonBlock,
         input_names: List[str],
         train_iter: TrainDataLoader,
         validation_iter: Optional[ValidationDataLoader] = None,
     ) -> None:  # TODO: we may want to return some training information here
+
+        net = network.network
+
         is_validation_available = validation_iter is not None
         self.halt = False
 
