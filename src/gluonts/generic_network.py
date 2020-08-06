@@ -1,6 +1,6 @@
 from pathlib import Path
 import numpy as np
-from typing import Any
+from typing import Any, Callable, Optional
 
 
 class GenericNetwork:
@@ -13,7 +13,9 @@ class GenericNetwork:
         The framework-dependent neural network.
     """
 
-    def __init__(self, network: Any) -> None:
+    batchify_fn: Callable = None
+
+    def __init__(self, network: Any, **kwargs) -> None:
         self.network = network
 
     def forward_pass(self, inputs) -> Any:
@@ -62,6 +64,12 @@ class GenericNetwork:
         raise NotImplementedError
 
     def get_forward_input_names(self):
+        """
+
+        """
+        raise NotImplementedError
+
+    def get_batchify_fn(self, batchify_fn: Optional[Callable]):
         """
 
         """

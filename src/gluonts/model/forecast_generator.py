@@ -22,6 +22,7 @@ from gluonts.core.component import validated
 from gluonts.dataset.common import DataEntry
 from gluonts.dataset.field_names import FieldName
 from gluonts.dataset.loader import InferenceDataLoader
+from gluonts.generic_network import GenericNetwork
 from gluonts.model.forecast import (
     DistributionForecast,
     Forecast,
@@ -82,7 +83,7 @@ class ForecastGenerator:
     def __call__(
         self,
         inference_data_loader: InferenceDataLoader,
-        prediction_net: BlockType,
+        prediction_net: GenericNetwork,
         input_names: List[str],
         freq: str,
         output_transform: Optional[OutputTransform],
@@ -144,7 +145,7 @@ class QuantileForecastGenerator(ForecastGenerator):
     def __call__(
         self,
         inference_data_loader: InferenceDataLoader,
-        prediction_net: BlockType,
+        prediction_net: GenericNetwork,
         input_names: List[str],
         freq: str,
         output_transform: Optional[OutputTransform],
@@ -153,7 +154,7 @@ class QuantileForecastGenerator(ForecastGenerator):
     ) -> Iterator[Forecast]:
         for batch in inference_data_loader:
             inputs = [batch[k] for k in input_names]
-            outputs = prediction_net(*inputs).asnumpy()
+            outputs = prediction_net.forward_pass_numpy(*inputs)
             if output_transform is not None:
                 outputs = output_transform(batch, outputs)
 
@@ -185,7 +186,7 @@ class SampleForecastGenerator(ForecastGenerator):
     def __call__(
         self,
         inference_data_loader: InferenceDataLoader,
-        prediction_net: BlockType,
+        prediction_net: GenericNetwork,
         input_names: List[str],
         freq: str,
         output_transform: Optional[OutputTransform],
@@ -194,14 +195,14 @@ class SampleForecastGenerator(ForecastGenerator):
     ) -> Iterator[Forecast]:
         for batch in inference_data_loader:
             inputs = [batch[k] for k in input_names]
-            outputs = prediction_net(*inputs).asnumpy()
+            outputs = prediction_net.forward_pass_numpy(*inputs)
             if output_transform is not None:
                 outputs = output_transform(batch, outputs)
             if num_samples:
                 num_collected_samples = outputs[0].shape[0]
                 collected_samples = [outputs]
                 while num_collected_samples < num_samples:
-                    outputs = prediction_net(*inputs).asnumpy()
+                    outputs = prediction_net.forward_pass_numpy(*inputs)
                     if output_transform is not None:
                         outputs = output_transform(batch, outputs)
                     collected_samples.append(outputs)

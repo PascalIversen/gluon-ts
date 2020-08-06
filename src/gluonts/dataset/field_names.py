@@ -19,7 +19,7 @@ class FieldName:
     """
 
     ITEM_ID = "item_id"
-
+    INFO = "info"
     START = "start"
     TARGET = "target"
 
@@ -32,8 +32,6 @@ class FieldName:
 
     FEAT_DYNAMIC = "feat_dynamic"
     PAST_FEAT_DYNAMIC = "past_feat_dynamic"
-
-    FEAT_DYNAMIC = "feat_dynamic"
 
     FEAT_TIME = "time_feat"
     FEAT_CONST = "feat_dynamic_const"

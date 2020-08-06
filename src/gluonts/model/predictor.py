@@ -48,9 +48,10 @@ from gluonts.core.component import (
 from gluonts.core.exception import GluonTSException
 from gluonts.core.serde import dump_json, fqname_for, load_json
 from gluonts.dataset.common import DataEntry, Dataset, ListDataset
+from gluonts.dataset.field_names import FieldName
 from gluonts.dataset.loader import DataBatch, InferenceDataLoader
 from gluonts.generic_network import GenericNetwork
-from gluonts.model.forecast import Forecast
+from gluonts.model.forecast import Forecast, SampleForecast
 from gluonts.support.util import (
     export_repr_block,
     export_symb_block,
@@ -66,7 +67,6 @@ from .forecast_generator import ForecastGenerator, SampleForecastGenerator
 
 if TYPE_CHECKING:  # avoid circular import
     from gluonts.model.estimator import Estimator  # noqa
-
 
 OutputTransform = Callable[[DataEntry, np.ndarray], np.ndarray]
 
@@ -185,11 +185,7 @@ class RepresentablePredictor(Predictor):
 
     @validated()
     def __init__(
-        self,
-        prediction_length: int,
-        freq: str,
-        network: GenericNetwork,
-        lead_time: int = 0,
+        self, prediction_length: int, freq: str, lead_time: int = 0,
     ) -> None:
         super().__init__(
             freq=freq, lead_time=lead_time, prediction_length=prediction_length
@@ -201,6 +197,102 @@ class RepresentablePredictor(Predictor):
 
     def predict_item(self, item: DataEntry) -> Forecast:
         raise NotImplementedError
+
+    def __eq__(self, that):
+        """
+        Two RepresentablePredictor instances are considered equal if they
+        have the same constructor arguments.
+        """
+        return equals(self, that)
+
+    def serialize(self, path: Path) -> None:
+        # call Predictor.serialize() in order to serialize the class name
+        super().serialize(path)
+        with (path / "predictor.json").open("w") as fp:
+            print(dump_json(self), file=fp)
+
+    @classmethod
+    def deserialize(
+        cls, path: Path, ctx: Optional[mx.Context] = None
+    ) -> "RepresentablePredictor":
+        with (path / "predictor.json").open("r") as fp:
+            return load_json(fp.read())
+
+
+class RepresentablePredictor_v2(Predictor):
+    """
+
+    Parameters
+    ----------
+    prediction_length
+        Prediction horizon.
+    freq
+        Frequency of the predicted data.
+    network
+    """
+
+    @validated()
+    def __init__(
+        self,
+        input_names: List[str],
+        prediction_net: GenericNetwork,
+        batch_size: int,
+        prediction_length: int,
+        freq: str,
+        input_transform: Transformation,
+        lead_time: int = 0,
+        forecast_generator: ForecastGenerator = SampleForecastGenerator(),
+        output_transform: Optional[OutputTransform] = None,
+    ) -> None:
+        super().__init__(
+            freq=freq,
+            lead_time=lead_time,
+            prediction_length=prediction_length,
+        )
+
+        self.input_names = input_names
+        self.prediction_net = prediction_net
+        self.batch_size = batch_size
+        self.input_transform = input_transform
+        self.forecast_generator = forecast_generator
+        self.output_transform = output_transform
+
+    def predict(
+        self,
+        dataset: Dataset,
+        num_samples: Optional[int] = None,
+        num_workers: Optional[int] = None,
+        num_prefetch: Optional[int] = None,
+        batchify_fn: Optional[Callable] = None,
+        **kwargs,
+    ) -> Iterator[Forecast]:
+        inference_data_loader = InferenceDataLoader(
+            dataset,
+            transform=self.input_transform,
+            batch_size=self.batch_size,
+            batchify_fn=self.prediction_net.get_batchify_fn(batchify_fn),
+            num_workers=num_workers,
+            num_prefetch=num_prefetch,
+        )
+        yield from self.forecast_generator(
+            inference_data_loader=inference_data_loader,
+            prediction_net=self.prediction_net,
+            input_names=self.input_names,
+            freq=self.freq,
+            output_transform=self.output_transform,
+            num_samples=num_samples,
+        )
+
+    # TODO test this!
+    def predict_item(self, item: DataEntry) -> Forecast:
+        inputs = [item[k] for k in self.input_names]
+        return SampleForecast(
+            samples=self.prediction_net.forward_pass_numpy(*inputs),
+            start_date=item.get(FieldName.START),
+            freq=self.freq,
+            item_id=item.get(FieldName.ITEM_ID),
+            info=item.get(FieldName.INFO),
+        )
 
     def __eq__(self, that):
         """
