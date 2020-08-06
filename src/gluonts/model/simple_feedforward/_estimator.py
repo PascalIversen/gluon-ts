@@ -15,13 +15,19 @@
 from typing import List, Optional
 
 # Third-party imports
+from gluonts.mx.block.gluon_block import GluonHybridBlock, GluonBlock
+from gluonts.mx.trainer._base import GluonTrainer
 from mxnet.gluon import HybridBlock
 
 # First-party imports
 from gluonts.core.component import validated
 from gluonts.dataset.field_names import FieldName
-from gluonts.model.estimator import GluonEstimator
-from gluonts.model.predictor import Predictor, RepresentableBlockPredictor
+from gluonts.model.estimator import GluonEstimator, GenericEstimator
+from gluonts.model.predictor import (
+    Predictor,
+    RepresentableBlockPredictor,
+    RepresentablePredictor,
+)
 from gluonts.mx.distribution import DistributionOutput, StudentTOutput
 from gluonts.mx.trainer import Trainer
 from gluonts.transform import (
@@ -46,7 +52,7 @@ from ._network import (
 )
 
 
-class SimpleFeedForwardEstimator(GluonEstimator):
+class SimpleFeedForwardEstimator(GenericEstimator):
     """
     SimpleFeedForwardEstimator shows how to build a simple MLP model predicting
     the next target time-steps given the previous ones.
@@ -109,7 +115,7 @@ class SimpleFeedForwardEstimator(GluonEstimator):
         freq: str,
         prediction_length: int,
         sampling: bool = True,
-        trainer: Trainer = Trainer(),
+        trainer: Trainer = GluonTrainer(),
         num_hidden_dimensions: Optional[List[int]] = None,
         context_length: Optional[int] = None,
         distr_output: DistributionOutput = StudentTOutput(),
@@ -188,59 +194,65 @@ class SimpleFeedForwardEstimator(GluonEstimator):
     # defines the network, we get to see one batch to initialize it.
     # the network should return at least one tensor that is used as a loss to minimize in the training loop.
     # several tensors can be returned for instance for analysis, see DeepARTrainingNetwork for an example.
-    def create_training_network(self) -> HybridBlock:
-        return SimpleFeedForwardTrainingNetwork(
-            num_hidden_dimensions=self.num_hidden_dimensions,
-            prediction_length=self.prediction_length,
-            context_length=self.context_length,
-            distr_output=self.distr_output,
-            batch_normalization=self.batch_normalization,
-            mean_scaling=self.mean_scaling,
+    def create_training_network(self) -> GluonHybridBlock:
+        return GluonHybridBlock(
+            network=SimpleFeedForwardTrainingNetwork(
+                num_hidden_dimensions=self.num_hidden_dimensions,
+                prediction_length=self.prediction_length,
+                context_length=self.context_length,
+                distr_output=self.distr_output,
+                batch_normalization=self.batch_normalization,
+                mean_scaling=self.mean_scaling,
+            )
         )
 
     # we now define how the prediction happens given that we are provided a
     # training network.
     def create_predictor(self, transformation, trained_network):
-        if self.sampling is True:
-            prediction_network = SimpleFeedForwardSamplingNetwork(
-                num_hidden_dimensions=self.num_hidden_dimensions,
-                prediction_length=self.prediction_length,
-                context_length=self.context_length,
-                distr_output=self.distr_output,
-                batch_normalization=self.batch_normalization,
-                mean_scaling=self.mean_scaling,
-                params=trained_network.collect_params(),
-                num_parallel_samples=self.num_parallel_samples,
-            )
+        assert isinstance(trained_network, GluonBlock)
+        with trained_network.ctx:
+            if self.sampling is True:
+                prediction_network = GluonHybridBlock(
+                    network=SimpleFeedForwardSamplingNetwork(
+                        num_hidden_dimensions=self.num_hidden_dimensions,
+                        prediction_length=self.prediction_length,
+                        context_length=self.context_length,
+                        distr_output=self.distr_output,
+                        batch_normalization=self.batch_normalization,
+                        mean_scaling=self.mean_scaling,
+                        params=trained_network.network.collect_params(),
+                        num_parallel_samples=self.num_parallel_samples,
+                    )
+                )
 
-            return RepresentableBlockPredictor(
-                input_transform=transformation,
-                prediction_net=prediction_network,
-                batch_size=self.trainer.batch_size,
-                freq=self.freq,
-                prediction_length=self.prediction_length,
-                ctx=self.trainer.ctx,
-            )
+                return RepresentablePredictor(
+                    input_transform=transformation,
+                    prediction_net=prediction_network,
+                    batch_size=self.trainer.batch_size,
+                    freq=self.freq,
+                    prediction_length=self.prediction_length,
+                )
 
-        else:
-            prediction_network = SimpleFeedForwardDistributionNetwork(
-                num_hidden_dimensions=self.num_hidden_dimensions,
-                prediction_length=self.prediction_length,
-                context_length=self.context_length,
-                distr_output=self.distr_output,
-                batch_normalization=self.batch_normalization,
-                mean_scaling=self.mean_scaling,
-                params=trained_network.collect_params(),
-                num_parallel_samples=self.num_parallel_samples,
-            )
-            return RepresentableBlockPredictor(
-                input_transform=transformation,
-                prediction_net=prediction_network,
-                batch_size=self.trainer.batch_size,
-                forecast_generator=DistributionForecastGenerator(
-                    self.distr_output
-                ),
-                freq=self.freq,
-                prediction_length=self.prediction_length,
-                ctx=self.trainer.ctx,
-            )
+            else:
+                prediction_network = GluonHybridBlock(
+                    network=SimpleFeedForwardDistributionNetwork(
+                        num_hidden_dimensions=self.num_hidden_dimensions,
+                        prediction_length=self.prediction_length,
+                        context_length=self.context_length,
+                        distr_output=self.distr_output,
+                        batch_normalization=self.batch_normalization,
+                        mean_scaling=self.mean_scaling,
+                        params=trained_network.network.collect_params(),
+                        num_parallel_samples=self.num_parallel_samples,
+                    )
+                )
+                return RepresentablePredictor(
+                    input_transform=transformation,
+                    prediction_net=prediction_network,
+                    batch_size=self.trainer.batch_size,
+                    forecast_generator=DistributionForecastGenerator(
+                        self.distr_output
+                    ),
+                    freq=self.freq,
+                    prediction_length=self.prediction_length,
+                )

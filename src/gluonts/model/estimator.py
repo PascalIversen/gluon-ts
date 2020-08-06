@@ -121,7 +121,7 @@ class DummyEstimator(Estimator):
 
 class TrainOutput(NamedTuple):
     transformation: Transformation
-    trained_net: HybridBlock
+    trained_net: GenericNetwork
     predictor: Predictor
 
 
@@ -391,20 +391,17 @@ class GenericEstimator(Estimator):
             )
 
         self.trainer(
-            net=untrained_net,
-            input_names=get_hybrid_forward_input_names(untrained_net),
+            network=untrained_net,
+            input_names=untrained_net.get_forward_input_names(),
             train_iter=training_data_loader,
             validation_iter=validation_data_loader,
         )
 
-        with self.trainer.ctx:
-            # ensure that the prediction network is created within the same MXNet
-            # context as the one that was used during training
-            return TrainOutput(
-                transformation=transformation,
-                trained_net=untrained_net,
-                predictor=self.create_predictor(transformation, untrained_net),
-            )
+        return TrainOutput(
+            transformation=transformation,
+            trained_net=untrained_net,
+            predictor=self.create_predictor(transformation, untrained_net),
+        )
 
     def train(
         self,

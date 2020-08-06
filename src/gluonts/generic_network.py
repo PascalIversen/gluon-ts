@@ -67,7 +67,7 @@ class GenericNetwork:
         """
         raise NotImplementedError
 
-    def get_forward_input_names(self, network: "GenericNetwork"):
+    def get_forward_input_names(self):
         """
 
         """

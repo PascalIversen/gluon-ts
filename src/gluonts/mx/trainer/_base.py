@@ -73,6 +73,10 @@ class Trainer:
 
     """
 
+    def __init__(self, num_batches_per_epoch: int, batch_size: int, **kwargs):
+        self.num_batches_per_epoch = num_batches_per_epoch
+        self.batch_size = batch_size
+
     def __call__(
         self,
         network: GenericNetwork,
@@ -159,8 +163,11 @@ class GluonTrainer(Trainer):
         assert 0 < clip_gradient, "The value of `clip_gradient` should be > 0"
         assert 0 <= weight_decay, "The value of `weight_decay` should be => 0"
 
+        super().__init__(
+            batch_size=batch_size, num_batches_per_epoch=num_batches_per_epoch
+        )
+
         self.epochs = epochs
-        self.batch_size = batch_size
         self.num_batches_per_epoch = num_batches_per_epoch
         self.learning_rate = learning_rate
         self.learning_rate_decay_factor = learning_rate_decay_factor

@@ -163,7 +163,6 @@ class RepresentablePredictor(Predictor):
     @validated()
     def __init__(
         self,
-        input_names: List[str],
         prediction_net: GenericNetwork,
         batch_size: int,
         prediction_length: int,
@@ -172,6 +171,8 @@ class RepresentablePredictor(Predictor):
         lead_time: int = 0,
         forecast_generator: ForecastGenerator = SampleForecastGenerator(),
         output_transform: Optional[OutputTransform] = None,
+        # Note: only symbol block utilizes this so far
+        input_names: Optional[List[str]] = None,
         **kwargs,
     ) -> None:
         super().__init__(

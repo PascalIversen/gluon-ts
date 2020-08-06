@@ -28,8 +28,6 @@ class GluonBlock(GenericNetwork):
         a Gluon Block
     """
 
-    batchify_fn = batchify
-
     def __init__(
         self,
         network: mx.gluon.Block,
@@ -49,14 +47,16 @@ class GluonBlock(GenericNetwork):
     def get_forward_input_names(self):
         return get_hybrid_forward_input_names(self.network)
 
-    def get_batchify_fn(self, batchify_fn: Optional[Callable]):
-        return (
-            partial(
-                self.batchify_fn if batchify_fn is None else batchify_fn,
-                ctx=self.ctx,
-                dtype=self.dtype,
-            ),
+    def get_batchify_fn(self, batchify_fn: Optional[Callable] = None):
+        return partial(
+            batchify if batchify_fn is None else batchify_fn,
+            ctx=self.ctx,
+            dtype=self.dtype,
         )
+
+    # TODO overwrite in subclasses
+    def as_symbol_block(self):
+        raise NotImplementedError
 
     def serialize_network(self, path: Path, name: str) -> None:
         with (path / "contextual_parameters.json").open("w") as fp:
@@ -128,8 +128,8 @@ class GluonHybridBlock(GluonBlock):
 
         return GluonHybridBlock(network=network, ctx=ctx, **kwargs)
 
-    def get_forward_input_names(self, network: "GluonHybridBlock"):
-        return get_hybrid_forward_input_names(network.network)
+    def get_forward_input_names(self):
+        return get_hybrid_forward_input_names(self.network)
 
 
 class GluonSymbolBlock(GluonBlock):

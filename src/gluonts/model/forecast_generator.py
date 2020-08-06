@@ -101,7 +101,7 @@ class DistributionForecastGenerator(ForecastGenerator):
     def __call__(
         self,
         inference_data_loader: InferenceDataLoader,
-        prediction_net: BlockType,
+        prediction_net: GenericNetwork,
         input_names: List[str],
         freq: str,
         output_transform: Optional[OutputTransform],
@@ -110,7 +110,7 @@ class DistributionForecastGenerator(ForecastGenerator):
     ) -> Iterator[DistributionForecast]:
         for batch in inference_data_loader:
             inputs = [batch[k] for k in input_names]
-            outputs = prediction_net(*inputs)
+            outputs = prediction_net.forward_pass(*inputs)
             if output_transform is not None:
                 outputs = output_transform(batch, outputs)
             if num_samples:
