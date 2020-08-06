@@ -49,6 +49,7 @@ from gluonts.core.exception import GluonTSException
 from gluonts.core.serde import dump_json, fqname_for, load_json
 from gluonts.dataset.common import DataEntry, Dataset, ListDataset
 from gluonts.dataset.loader import DataBatch, InferenceDataLoader
+from gluonts.generic_network import GenericNetwork
 from gluonts.model.forecast import Forecast
 from gluonts.support.util import (
     export_repr_block,
@@ -172,10 +173,6 @@ class Predictor:
 
 class RepresentablePredictor(Predictor):
     """
-    An abstract predictor that can be subclassed by models that are not based
-    on Gluon. Subclasses should have @validated() constructors.
-    (De)serialization and value equality are all implemented on top of the
-    @validated() logic.
 
     Parameters
     ----------
@@ -183,11 +180,16 @@ class RepresentablePredictor(Predictor):
         Prediction horizon.
     freq
         Frequency of the predicted data.
+    network
     """
 
     @validated()
     def __init__(
-        self, prediction_length: int, freq: str, lead_time: int = 0
+        self,
+        prediction_length: int,
+        freq: str,
+        network: GenericNetwork,
+        lead_time: int = 0,
     ) -> None:
         super().__init__(
             freq=freq, lead_time=lead_time, prediction_length=prediction_length
@@ -535,7 +537,6 @@ class RepresentableBlockPredictor(GluonPredictor):
 
             # deserialize prediction network
             prediction_net = import_repr_block(path, "prediction_net")
-
             # input_names is derived from the prediction_net
             if "input_names" in parameters:
                 del parameters["input_names"]
