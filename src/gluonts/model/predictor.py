@@ -86,7 +86,7 @@ class Predictor:
     __version__: str = gluonts.__version__
 
     def __init__(
-        self, prediction_length: int, freq: str, lead_time: int = 0
+        self, prediction_length: int, freq: str, lead_time: int = 0, **kwargs
     ) -> None:
         assert (
             prediction_length > 0
@@ -127,32 +127,9 @@ class Predictor:
 
     @classmethod
     def deserialize(
-        cls, path: Path, ctx: Optional[mx.Context] = None
+        cls, path: Path, network_class: "GenericNetwork"
     ) -> "Predictor":
-        """
-        Load a serialized predictor from the given path
-
-        Parameters
-        ----------
-        path
-            Path to the serialized files predictor.
-        ctx
-            Optional mxnet context to be used with the predictor.
-            If nothing is passed will use the GPU if available and CPU otherwise.
-        """
-        # deserialize Predictor type
-        with (path / "type.txt").open("r") as fp:
-            tpe = locate(fp.readline())
-
-        # ensure that predictor_cls is a subtype of Predictor
-        if not issubclass(tpe, Predictor):
-            raise IOError(
-                f"Class {fqname_for(tpe)} is not "
-                f"a subclass of {fqname_for(Predictor)}"
-            )
-
-        # call deserialize() for the concrete Predictor type
-        return tpe.deserialize(path, ctx)
+        raise NotImplementedError
 
     @classmethod
     def from_hyperparameters(cls, **hyperparameters):
@@ -185,54 +162,6 @@ class RepresentablePredictor(Predictor):
 
     @validated()
     def __init__(
-        self, prediction_length: int, freq: str, lead_time: int = 0,
-    ) -> None:
-        super().__init__(
-            freq=freq, lead_time=lead_time, prediction_length=prediction_length
-        )
-
-    def predict(self, dataset: Dataset, **kwargs) -> Iterator[Forecast]:
-        for item in dataset:
-            yield self.predict_item(item)
-
-    def predict_item(self, item: DataEntry) -> Forecast:
-        raise NotImplementedError
-
-    def __eq__(self, that):
-        """
-        Two RepresentablePredictor instances are considered equal if they
-        have the same constructor arguments.
-        """
-        return equals(self, that)
-
-    def serialize(self, path: Path) -> None:
-        # call Predictor.serialize() in order to serialize the class name
-        super().serialize(path)
-        with (path / "predictor.json").open("w") as fp:
-            print(dump_json(self), file=fp)
-
-    @classmethod
-    def deserialize(
-        cls, path: Path, ctx: Optional[mx.Context] = None
-    ) -> "RepresentablePredictor":
-        with (path / "predictor.json").open("r") as fp:
-            return load_json(fp.read())
-
-
-class RepresentablePredictor_v2(Predictor):
-    """
-
-    Parameters
-    ----------
-    prediction_length
-        Prediction horizon.
-    freq
-        Frequency of the predicted data.
-    network
-    """
-
-    @validated()
-    def __init__(
         self,
         input_names: List[str],
         prediction_net: GenericNetwork,
@@ -243,6 +172,7 @@ class RepresentablePredictor_v2(Predictor):
         lead_time: int = 0,
         forecast_generator: ForecastGenerator = SampleForecastGenerator(),
         output_transform: Optional[OutputTransform] = None,
+        **kwargs,
     ) -> None:
         super().__init__(
             freq=freq,
@@ -270,6 +200,7 @@ class RepresentablePredictor_v2(Predictor):
             dataset,
             transform=self.input_transform,
             batch_size=self.batch_size,
+            # if batchify_fn is None it is inferred from the prediction_net class type
             batchify_fn=self.prediction_net.get_batchify_fn(batchify_fn),
             num_workers=num_workers,
             num_prefetch=num_prefetch,
@@ -294,6 +225,7 @@ class RepresentablePredictor_v2(Predictor):
             info=item.get(FieldName.INFO),
         )
 
+    # FIXME ?
     def __eq__(self, that):
         """
         Two RepresentablePredictor instances are considered equal if they
@@ -302,17 +234,57 @@ class RepresentablePredictor_v2(Predictor):
         return equals(self, that)
 
     def serialize(self, path: Path) -> None:
+
         # call Predictor.serialize() in order to serialize the class name
         super().serialize(path)
-        with (path / "predictor.json").open("w") as fp:
-            print(dump_json(self), file=fp)
+
+        # serialize the prediction network
+        self.prediction_net.serialize_network(path, name="prediction_net")
+
+        # serialize transformation chain
+        with (path / "input_transform.json").open("w") as fp:
+            print(dump_json(self.input_transform), file=fp)
+
+        # FIXME: also needs to serialize the output_transform
+
+        # serialize all remaining constructor parameters
+        with (path / "parameters.json").open("w") as fp:
+            parameters = dict(
+                batch_size=self.batch_size,
+                prediction_length=self.prediction_length,
+                freq=self.freq,
+                forecast_generator=self.forecast_generator,
+                input_names=self.input_names,
+            )
+            print(dump_json(parameters), file=fp)
 
     @classmethod
     def deserialize(
-        cls, path: Path, ctx: Optional[mx.Context] = None
+        cls,
+        path: Path,
+        network_class: "GenericNetwork",  # TODO should we serialize this instead to infer it here?
+        **kwargs,  # TODO kwargs could contain ctx, maybe too dynamic?
     ) -> "RepresentablePredictor":
-        with (path / "predictor.json").open("r") as fp:
-            return load_json(fp.read())
+
+        with (path / "parameters.json").open("r") as fp:
+            parameters = load_json(fp.read())
+
+        # deserialize transformation chain
+        with (path / "input_transform.json").open("r") as fp:
+            transform = load_json(fp.read())
+
+        # deserialize prediction network
+        # num_inputs = len(parameters["input_names"]) # TODO remember this for symbol block
+        prediction_net = network_class.deserialize_network(
+            path, "prediction_net", **parameters
+        )
+        assert isinstance(prediction_net, GenericNetwork)
+
+        return RepresentablePredictor(
+            input_transform=transform,
+            prediction_net=prediction_net,
+            **parameters,
+        )
 
 
 class GluonPredictor(Predictor):
