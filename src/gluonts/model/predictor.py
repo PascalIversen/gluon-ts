@@ -181,7 +181,11 @@ class RepresentablePredictor(Predictor):
             prediction_length=prediction_length,
         )
 
-        self.input_names = input_names
+        self.input_names = (
+            input_names
+            if input_names is not None
+            else prediction_net.get_forward_input_names()
+        )
         self.prediction_net = prediction_net
         self.batch_size = batch_size
         self.input_transform = input_transform

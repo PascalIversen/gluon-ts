@@ -42,7 +42,7 @@ class GluonBlock(GenericNetwork):
     def forward_pass_numpy(
         self, inputs, dtype: Optional[DType] = np.float32
     ) -> np.ndarray:
-        return self.network(inputs).asnumpy(dtype=dtype)
+        return self.network(inputs).asnumpy().astype(dtype)
 
     def get_forward_input_names(self):
         return get_hybrid_forward_input_names(self.network)

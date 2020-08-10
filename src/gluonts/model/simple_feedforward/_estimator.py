@@ -213,7 +213,10 @@ class SimpleFeedForwardEstimator(GenericEstimator):
     # we now define how the prediction happens given that we are provided a
     # training network.
     def create_predictor(self, transformation, trained_network):
-        assert isinstance(trained_network, GluonBlock)
+
+        assert isinstance(
+            trained_network, GluonBlock
+        )  # FIXME needed for type checking...why?
 
         with trained_network.ctx:
             if self.sampling is True:
