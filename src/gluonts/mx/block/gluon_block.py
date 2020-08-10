@@ -13,7 +13,7 @@ from gluonts.support.util import (
 )
 from gluonts.dataset.loader import DataBatch
 from gluonts.support.util import export_symb_block, import_repr_block
-from typing import Optional, Tuple, Dict, Callable
+from typing import Optional, Dict, Callable
 
 from gluonts.mx.batchify import batchify
 
@@ -64,9 +64,7 @@ class GluonBlock(GenericNetwork):
             print(dump_json(contextual_parameters), file=fp)
 
     @classmethod
-    def deserialize_block(
-        cls, path: Path, name: str, **kwargs
-    ) -> "GluonBlock":
+    def deserialize(cls, path: Path, name: str, **kwargs) -> "GluonBlock":
         raise NotImplementedError
 
     @classmethod
@@ -84,7 +82,7 @@ class GluonBlock(GenericNetwork):
 
         contextual_parameters["ctx"] = ctx
 
-        return cls.deserialize_block(
+        return cls.deserialize(
             path, name, **contextual_parameters, **parameters
         )
 
@@ -119,7 +117,7 @@ class GluonHybridBlock(GluonBlock):
 
     # pylint:disable=arguments-differ
     @classmethod
-    def deserialize_block(
+    def deserialize(
         cls, path: Path, name: str, ctx: mx.Context, **kwargs
     ) -> "GluonHybridBlock":
         with mx.Context(ctx):
@@ -152,7 +150,7 @@ class GluonSymbolBlock(GluonBlock):
 
     # pylint:disable=arguments-differ
     @classmethod
-    def deserialize_block(
+    def deserialize(
         cls,
         path: Path,
         name: str,
