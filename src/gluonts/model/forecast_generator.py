@@ -91,6 +91,10 @@ class ForecastGenerator:
     ) -> Iterator[Forecast]:
         raise NotImplementedError()
 
+    @classmethod
+    def to_numpy(cls, tensor) -> np.ndarray:
+        raise NotImplementedError
+
 
 class DistributionForecastGenerator(ForecastGenerator):
     @validated()
@@ -153,7 +157,7 @@ class QuantileForecastGenerator(ForecastGenerator):
     ) -> Iterator[Forecast]:
         for batch in inference_data_loader:
             inputs = [batch[k] for k in input_names]
-            outputs = prediction_net(*inputs).asnumpy()
+            outputs = self.to_numpy(prediction_net(*inputs))
             if output_transform is not None:
                 outputs = output_transform(batch, outputs)
 
@@ -201,7 +205,7 @@ class SampleForecastGenerator(ForecastGenerator):
                 num_collected_samples = outputs[0].shape[0]
                 collected_samples = [outputs]
                 while num_collected_samples < num_samples:
-                    outputs = prediction_net(*inputs).asnumpy()
+                    outputs = self.to_numpy(prediction_net(*inputs))
                     if output_transform is not None:
                         outputs = output_transform(batch, outputs)
                     collected_samples.append(outputs)
@@ -223,3 +227,22 @@ class SampleForecastGenerator(ForecastGenerator):
                     info=batch["info"][i] if "info" in batch else None,
                 )
             assert i + 1 == len(batch["forecast_start"])
+
+
+class GluonSampleForecastGenerator(SampleForecastGenerator):
+    @classmethod
+    def to_numpy(cls, tensor: mx.ndarray) -> np.ndarray:
+        return tensor.asnumpy()
+
+
+class GluonQuantileForecastGenerator(QuantileForecastGenerator):
+
+    @classmethod
+    def to_numpy(cls, tensor: mx.ndarray) -> np.ndarray:
+        return tensor.asnumpy()
+
+
+class PyTorchSampleForecastGenerator(SampleForecastGenerator):
+    @classmethod
+    def to_numpy(cls, tensor: mx.ndarray) -> np.ndarray:
+        return tensor.data.numpy()
