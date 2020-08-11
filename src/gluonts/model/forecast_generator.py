@@ -236,7 +236,6 @@ class GluonSampleForecastGenerator(SampleForecastGenerator):
 
 
 class GluonQuantileForecastGenerator(QuantileForecastGenerator):
-
     @classmethod
     def to_numpy(cls, tensor: mx.ndarray) -> np.ndarray:
         return tensor.asnumpy()

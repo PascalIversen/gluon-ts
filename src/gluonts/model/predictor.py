@@ -59,9 +59,14 @@ from gluonts.support.util import (
     import_symb_block,
 )
 from gluonts.transform import Transformation
-from gluonts.mx.batchify import batchify
+from gluonts.mx.batchify import batchify as mx_batchify
+from gluonts.torch.batchify import batchify as torch_batchify
+from mxnet import torch
 
-from .forecast_generator import ForecastGenerator, SampleForecastGenerator
+from .forecast_generator import (
+    PyTorchSampleForecastGenerator,
+    GluonSampleForecastGenerator,
+)
 
 if TYPE_CHECKING:  # avoid circular import
     from gluonts.model.estimator import Estimator  # noqa
@@ -221,7 +226,40 @@ class RepresentablePredictor(Predictor):
             return load_json(fp.read())
 
 
-class GluonPredictor(Predictor):
+class NNPredictor(Predictor):
+    def get_batchify_fn(self):
+        raise NotImplementedError
+
+    def predict(
+        self,
+        dataset: Dataset,
+        num_samples: Optional[int] = None,
+        num_workers: Optional[int] = None,
+        num_prefetch: Optional[int] = None,
+        batchify_fn: Optional[Callable] = None,
+        **kwargs,
+    ) -> Iterator[Forecast]:
+        inference_data_loader = InferenceDataLoader(
+            dataset,
+            transform=self.input_transform,
+            batch_size=self.batch_size,
+            batchify_fn=self.get_batchify_fn()
+            if batchify_fn is None
+            else batchify_fn,
+            num_workers=num_workers,
+            num_prefetch=num_prefetch,
+        )
+        yield from self.forecast_generator(
+            inference_data_loader=inference_data_loader,
+            prediction_net=self.prediction_net,
+            input_names=self.input_names,
+            freq=self.freq,
+            output_transform=self.output_transform,
+            num_samples=num_samples,
+        )
+
+
+class GluonPredictor(NNPredictor):
     """
     Base predictor type for Gluon-based models.
 
@@ -259,7 +297,7 @@ class GluonPredictor(Predictor):
         ctx: mx.Context,
         input_transform: Transformation,
         lead_time: int = 0,
-        forecast_generator: ForecastGenerator = SampleForecastGenerator(),
+        forecast_generator: GluonSampleForecastGenerator = GluonSampleForecastGenerator(),
         output_transform: Optional[OutputTransform] = None,
         dtype: DType = np.float32,
     ) -> None:
@@ -277,6 +315,9 @@ class GluonPredictor(Predictor):
         self.output_transform = output_transform
         self.ctx = ctx
         self.dtype = dtype
+
+    def get_batchify_fn(self):
+        raise partial(mx_batchify, ctx=self.ctx, dtype=self.dtype)
 
     def hybridize(self, batch: DataBatch) -> None:
         """
@@ -311,36 +352,6 @@ class GluonPredictor(Predictor):
             A predictor derived from the current one backed by a `SymbolBlock`.
         """
         raise NotImplementedError
-
-    def predict(
-        self,
-        dataset: Dataset,
-        num_samples: Optional[int] = None,
-        num_workers: Optional[int] = None,
-        num_prefetch: Optional[int] = None,
-        batchify_fn: Optional[Callable] = None,
-        **kwargs,
-    ) -> Iterator[Forecast]:
-        inference_data_loader = InferenceDataLoader(
-            dataset,
-            transform=self.input_transform,
-            batch_size=self.batch_size,
-            batchify_fn=partial(
-                batchify if batchify_fn is None else batchify_fn,
-                ctx=self.ctx,
-                dtype=self.dtype,
-            ),
-            num_workers=num_workers,
-            num_prefetch=num_prefetch,
-        )
-        yield from self.forecast_generator(
-            inference_data_loader=inference_data_loader,
-            prediction_net=self.prediction_net,
-            input_names=self.input_names,
-            freq=self.freq,
-            output_transform=self.output_transform,
-            num_samples=num_samples,
-        )
 
     def __eq__(self, that):
         if type(self) != type(that):
@@ -381,6 +392,87 @@ class GluonPredictor(Predictor):
                 input_names=self.input_names,
             )
             print(dump_json(parameters), file=fp)
+
+    def serialize_prediction_net(self, path: Path) -> None:
+        raise NotImplementedError()
+
+
+class PyTorchPredictor(NNPredictor):
+    """
+    Base predictor type for PyTorch-based models.
+
+    Parameters
+    ----------
+    input_names
+        Input tensor names for the graph
+    prediction_net
+        Network that will be called for prediction
+    batch_size
+        Number of time series to predict in a single batch
+    prediction_length
+        Number of time steps to predict
+    freq
+        Frequency of the input data
+    input_transform
+        Input transformation pipeline
+    output_transform
+        Output transformation
+    device
+        PyTorch device to use for computation
+    forecast_generator
+        Class to generate forecasts from network outputs
+    """
+
+    Network = torch.nn
+
+    def __init__(
+        self,
+        input_names: List[str],
+        prediction_net: Network,
+        batch_size: int,
+        prediction_length: int,
+        freq: str,
+        device: torch.device,
+        input_transform: Transformation,
+        lead_time: int = 0,
+        forecast_generator: PyTorchSampleForecastGenerator = PyTorchSampleForecastGenerator(),
+        output_transform: Optional[OutputTransform] = None,
+    ) -> None:
+        super().__init__(
+            freq=freq,
+            lead_time=lead_time,
+            prediction_length=prediction_length,
+        )
+
+        self.input_names = input_names
+        self.prediction_net = prediction_net
+        self.batch_size = batch_size
+        self.input_transform = input_transform
+        self.forecast_generator = forecast_generator
+        self.output_transform = output_transform
+        self.device = device
+
+    def get_batchify_fn(self):
+        raise partial(torch_batchify, device=self.device)
+
+    def hybridize(self, batch: DataBatch) -> None:
+        """
+        Hybridizes the underlying prediction network.
+
+        Parameters
+        ----------
+        batch
+            A batch of data to use for the required forward pass after the
+            `hybridize()` call.
+        """
+        self.prediction_net.hybridize(active=True)
+        self.prediction_net(*[batch[k] for k in self.input_names])
+
+    def __eq__(self, that):
+        raise NotImplementedError
+
+    def serialize(self, path: Path) -> None:
+        raise NotImplementedError
 
     def serialize_prediction_net(self, path: Path) -> None:
         raise NotImplementedError()
@@ -464,7 +556,7 @@ class RepresentableBlockPredictor(GluonPredictor):
         ctx: mx.Context,
         input_transform: Transformation,
         lead_time: int = 0,
-        forecast_generator: ForecastGenerator = SampleForecastGenerator(),
+        forecast_generator: GluonSampleForecastGenerator = GluonSampleForecastGenerator(),
         output_transform: Optional[
             Callable[[DataEntry, np.ndarray], np.ndarray]
         ] = None,
