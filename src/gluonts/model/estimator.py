@@ -31,7 +31,7 @@ from gluonts.model.predictor import Predictor
 from gluonts.mx.trainer import Trainer
 from gluonts.support.util import get_hybrid_forward_input_names
 from gluonts.transform import Transformation
-from gluonts.mx.batchify import batchify
+from gluonts.mx.batchify import batchify as mx_batchify
 
 
 class Estimator:
@@ -124,7 +124,106 @@ class TrainOutput(NamedTuple):
     predictor: Predictor
 
 
-class GluonEstimator(Estimator):
+class NNEstimator(Estimator):
+    """
+    An `Estimator` type with utilities for creating Gluon-based models.
+
+    To extend this class, one needs to implement three methods:
+    `create_transformation`, `create_training_network`, `create_predictor`.
+    """
+
+    @validated()
+    def __init__(self, trainer: Trainer, lead_time: int = 0) -> None:
+        super().__init__(lead_time=lead_time)
+        self.trainer = trainer
+
+    @classmethod
+    def from_hyperparameters(cls, **hyperparameters):
+        raise NotImplementedError
+
+    def create_transformation(self) -> Transformation:
+        """
+        Create and return the transformation needed for training and inference.
+
+        Returns
+        -------
+        Transformation
+            The transformation that will be applied entry-wise to datasets,
+            at training and inference time.
+        """
+        raise NotImplementedError
+
+    def create_training_network(self):
+        """
+        Create and return the network used for training (i.e., computing the
+        loss).
+
+        Returns
+        -------
+        HybridBlock
+            The network that computes the loss given input data.
+        """
+        raise NotImplementedError
+
+    def create_predictor(
+        self, transformation: Transformation, trained_network: HybridBlock
+    ) -> Predictor:
+        """
+        Create and return a predictor object.
+
+        Returns
+        -------
+        Predictor
+            A predictor wrapping a `HybridBlock` used for inference.
+        """
+        raise NotImplementedError
+
+    def get_batchify_fn(self):
+        raise NotImplementedError
+
+    def train(
+        self,
+        training_data: Dataset,
+        validation_data: Optional[Dataset] = None,
+        num_workers: Optional[int] = None,
+        num_prefetch: Optional[int] = None,
+        shuffle_buffer_length: Optional[int] = None,
+        batchify_fn: Optional[Callable] = None,
+    ) -> Predictor:
+
+        transformation = self.create_transformation()
+
+        training_data_loader = TrainDataLoader(
+            dataset=training_data,
+            transform=transformation,
+            batch_size=self.trainer.batch_size,
+            num_batches_per_epoch=self.trainer.num_batches_per_epoch,
+            batchify_fn=self.get_batchify_fn()
+            if batchify_fn is None
+            else batchify_fn,
+            num_workers=num_workers,
+            num_prefetch=num_prefetch,
+            shuffle_buffer_length=shuffle_buffer_length,
+        )
+
+        validation_data_loader = None
+        if validation_data is not None:
+            validation_data_loader = ValidationDataLoader(
+                dataset=validation_data,
+                transform=transformation,
+                batch_size=self.trainer.batch_size,
+                batchify_fn=self.get_batchify_fn()
+                if batchify_fn is None
+                else batchify_fn,
+                num_workers=num_workers,
+                num_prefetch=num_prefetch,
+            )
+        return self.train_model(
+            transformation, training_data_loader, validation_data_loader
+        ).predictor
+
+
+class GluonEstimator(NNEstimator):
     """
     An `Estimator` type with utilities for creating Gluon-based models.
 
@@ -136,9 +235,11 @@ class GluonEstimator(Estimator):
     def __init__(
         self, trainer: Trainer, lead_time: int = 0, dtype: DType = np.float32
     ) -> None:
-        super().__init__(lead_time=lead_time)
-        self.trainer = trainer
+        super().__init__(trainer=trainer, lead_time=lead_time)
         self.dtype = dtype
+
+    def get_batchify_fn(self):
+        return partial(mx_batchify, ctx=self.trainer.ctx, dtype=self.dtype)
 
     @classmethod
     def from_hyperparameters(cls, **hyperparameters) -> "GluonEstimator":
@@ -198,45 +299,8 @@ class GluonEstimator(Estimator):
         raise NotImplementedError
 
     def train_model(
-        self,
-        training_data: Dataset,
-        validation_data: Optional[Dataset] = None,
-        num_workers: Optional[int] = None,
-        num_prefetch: Optional[int] = None,
-        shuffle_buffer_length: Optional[int] = None,
-        batchify_fn: Optional[Callable] = None,
+        self, transformation, training_data_loader, validation_data_loader,
     ) -> TrainOutput:
-        transformation = self.create_transformation()
-
-        training_data_loader = TrainDataLoader(
-            dataset=training_data,
-            transform=transformation,
-            batch_size=self.trainer.batch_size,
-            num_batches_per_epoch=self.trainer.num_batches_per_epoch,
-            batchify_fn=partial(
-                batchify if batchify_fn is None else batchify_fn,
-                ctx=self.trainer.ctx,
-                dtype=self.dtype,
-            ),
-            num_workers=num_workers,
-            num_prefetch=num_prefetch,
-            shuffle_buffer_length=shuffle_buffer_length,
-        )
-
-        validation_data_loader = None
-        if validation_data is not None:
-            validation_data_loader = ValidationDataLoader(
-                dataset=validation_data,
-                transform=transformation,
-                batch_size=self.trainer.batch_size,
-                batchify_fn=partial(
-                    batchify if batchify_fn is None else batchify_fn,
-                    ctx=self.trainer.ctx,
-                    dtype=self.dtype,
-                ),
-                num_workers=num_workers,
-                num_prefetch=num_prefetch,
-            )
 
         # ensure that the training network is created within the same MXNet
         # context as the one that will be used during training
@@ -258,21 +322,3 @@ class GluonEstimator(Estimator):
                 trained_net=trained_net,
                 predictor=self.create_predictor(transformation, trained_net),
             )
-
-    def train(
-        self,
-        training_data: Dataset,
-        validation_data: Optional[Dataset] = None,
-        num_workers: Optional[int] = None,
-        num_prefetch: Optional[int] = None,
-        shuffle_buffer_length: Optional[int] = None,
-        batchify_fn: Optional[Callable] = None,
-    ) -> Predictor:
-        return self.train_model(
-            training_data,
-            validation_data,
-            num_workers,
-            num_prefetch,
-            shuffle_buffer_length,
-            batchify_fn,
-        ).predictor

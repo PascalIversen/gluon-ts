@@ -26,6 +26,7 @@ import mxnet.gluon.nn as nn
 import numpy as np
 
 # First-party imports
+import torch
 from gluonts.core.component import get_mxnet_context, validated
 from gluonts.core.exception import GluonTSDataError, GluonTSUserError
 from gluonts.dataset.loader import TrainDataLoader, ValidationDataLoader
@@ -395,3 +396,280 @@ class Trainer:
                     self.avg_strategy.load_averaged_model(net)
 
                 logger.info("End model training")
+
+
+class PyTorchTrainer:
+    # FIXME Trainer should inherit from common ABC
+
+    @validated()
+    def __init__(
+        self,
+        device: Optional[torch.device] = None,
+        epochs: int = 100,
+        batch_size: int = 32,
+        num_batches_per_epoch: int = 50,
+        learning_rate: float = 1e-3,
+        learning_rate_decay_factor: float = 0.5,
+        patience: int = 10,
+        minimum_learning_rate: float = 5e-5,
+        clip_gradient: float = 10.0,
+        weight_decay: float = 1e-8,
+        # TODO implement user specified initalization: init: Union[str, mx.initializer.Initializer] = "xavier",
+        avg_strategy: Union[
+            AveragingStrategy, IterationAveragingStrategy
+        ] = SelectNBestMean(num_models=1),
+    ) -> None:
+
+        assert (
+            0 <= epochs < float("inf")
+        ), "The value of `epochs` should be >= 0"
+        assert 0 < batch_size, "The value of `batch_size` should be > 0"
+        assert (
+            0 < num_batches_per_epoch
+        ), "The value of `num_batches_per_epoch` should be > 0"
+        assert (
+            0 < learning_rate < float("inf")
+        ), "The value of `learning_rate` should be > 0"
+        assert (
+            0 <= learning_rate_decay_factor < 1
+        ), "The value of `learning_rate_decay_factor` should be in the [0, 1) range"
+        assert 0 <= patience, "The value of `patience` should be >= 0"
+        assert (
+            0 <= minimum_learning_rate
+        ), "The value of `minimum_learning_rate` should be >= 0"
+        assert 0 < clip_gradient, "The value of `clip_gradient` should be > 0"
+        assert 0 <= weight_decay, "The value of `weight_decay` should be => 0"
+
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.num_batches_per_epoch = num_batches_per_epoch
+        self.learning_rate = learning_rate
+        self.learning_rate_decay_factor = learning_rate_decay_factor
+        self.patience = patience
+        self.minimum_learning_rate = minimum_learning_rate
+        self.clip_gradient = clip_gradient
+        self.weight_decay = weight_decay
+
+        self.avg_strategy = avg_strategy
+        self.device = device  # TODO implement: if device is not None else get_torch_device()
+        self.halt = False
+
+    def set_halt(self, signum: int, stack_frame: Any) -> None:
+        logger.info("Received signal: {}".format(signum))
+        self.halt = True
+
+    def count_model_params(self, net: torch.nn) -> int:
+        raise NotImplementedError
+
+    def __call__(
+        self,
+        net: torch.nn,
+        input_names: List[str],
+        train_iter: TrainDataLoader,
+        validation_iter: Optional[ValidationDataLoader] = None,
+    ) -> None:  # TODO: we may want to return some training information here
+        is_validation_available = validation_iter is not None
+        self.halt = False
+
+        with tempfile.TemporaryDirectory(
+            prefix="gluonts-trainer-temp-"
+        ) as gluonts_temp:
+
+            def base_path() -> str:
+                return os.path.join(
+                    gluonts_temp,
+                    "{}_{}".format(STATE_ARTIFACT_FILE_NAME, uuid.uuid4()),
+                )
+
+            logger.info("Start model training")
+
+            batch_size = train_iter.batch_size
+
+            best_epoch_info = {
+                "params_path": "%s-%s.params" % (base_path(), "init"),
+                "epoch_no": -1,
+                "score": np.Inf,
+            }
+
+            optimizer = torch.optim.Adam(
+                net.parameters(),
+                lr=self.learning_rate,
+                weight_decay=self.weight_decay,
+            )
+
+            # TODO implement PyTorch gradient clipping
+
+            lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode="min",
+                patience=self.patience,
+                factor=self.learning_rate_decay_factor,
+                min_lr=self.minimum_learning_rate,
+            )
+            trainer = mx.gluon.Trainer(
+                net.collect_params(),
+                optimizer=optimizer,
+                kvstore="device",  # FIXME: initialize properly
+            )
+
+            def loop(
+                epoch_no, batch_iter, is_training: bool = True
+            ) -> mx.metric.Loss:
+                tic = time.time()
+
+                epoch_loss = mx.metric.Loss()
+
+                # use averaged model for validation
+                if not is_training and isinstance(
+                    self.avg_strategy, IterationAveragingStrategy
+                ):
+                    self.avg_strategy.load_averaged_model(net)
+
+                with tqdm(batch_iter) as it:
+                    for batch_no, data_entry in enumerate(it, start=1):
+                        if self.halt:
+                            break
+
+                        inputs = [data_entry[k] for k in input_names]
+
+                        optimizer.zero_grad()
+
+                        output = net(*inputs)
+
+                        # network can returns several outputs, the first being always the loss
+                        # when having multiple outputs, the forward returns a list in the case of hybrid and a
+                        # tuple otherwise
+                        # we may wrap network outputs in the future to avoid this type check
+                        if isinstance(output, (list, tuple)):
+                            loss = output[0]
+                        else:
+                            loss = output
+
+                        if is_training:
+                            loss.backward()
+                            optimizer.step(batch_size)
+                            # iteration averaging in training
+                            if isinstance(
+                                self.avg_strategy, IterationAveragingStrategy,
+                            ):
+                                self.avg_strategy.apply(net)
+
+                        epoch_loss.update(
+                            None, preds=mx.nd.array(loss.data.asnumpy())
+                        )  # FIXME implement this properly
+                        lv = loss_value(epoch_loss)
+
+                        if not np.isfinite(lv):
+                            logger.warning("Epoch[%d] gave nan loss", epoch_no)
+                            return epoch_loss
+
+                        it.set_postfix(
+                            ordered_dict={
+                                "epoch": f"{epoch_no + 1}/{self.epochs}",
+                                ("" if is_training else "validation_")
+                                + "avg_epoch_loss": lv,
+                            },
+                            refresh=False,
+                        )
+                        # print out parameters of the network at the first pass # FIXME implement for torch
+                        # if batch_no == 1 and epoch_no == 0:
+                        #     net_name = type(net).__name__
+                        #     num_model_param = self.count_model_params(net)
+                        #     logger.info(
+                        #         f"Number of parameters in {net_name}: {num_model_param}"
+                        #     )
+                # mark epoch end time and log time cost of current epoch
+                toc = time.time()
+                logger.info(
+                    "Epoch[%d] Elapsed time %.3f seconds",
+                    epoch_no,
+                    (toc - tic),
+                )
+
+                logger.info(
+                    "Epoch[%d] Evaluation metric '%s'=%f",
+                    epoch_no,
+                    ("" if is_training else "validation_") + "epoch_loss",
+                    lv,
+                )
+
+                if not is_training and isinstance(
+                    self.avg_strategy, IterationAveragingStrategy
+                ):
+                    # bring back the cached model
+                    self.avg_strategy.load_cached_model(net)
+
+                return epoch_loss
+
+            for epoch_no in range(self.epochs):
+                if self.halt:
+                    logger.info(f"Epoch[{epoch_no}] Interrupting training")
+                    break
+
+                curr_lr = optimizer.param_groups[0]["lr"]
+
+                logger.info(f"Epoch[{epoch_no}] Learning rate is {curr_lr}")
+
+                epoch_loss = loop(epoch_no, train_iter)
+                if is_validation_available:
+                    epoch_loss = loop(
+                        epoch_no, validation_iter, is_training=False
+                    )
+
+                # update average trigger
+                if isinstance(self.avg_strategy, IterationAveragingStrategy):
+                    self.avg_strategy.update_average_trigger(
+                        metric=loss_value(epoch_loss), epoch=epoch_no + 1
+                    )
+                    # once triggered, update the average immediately
+                    self.avg_strategy.apply(net)
+
+                lr_scheduler.step(loss_value(epoch_loss))
+                if False:  # FIXME
+                    logger.info("Stopping training")
+                    break
+
+                # save model and epoch info
+                bp = base_path()
+                epoch_info = {
+                    "params_path": f"{bp}-0000.params",
+                    "epoch_no": epoch_no,
+                    "score": loss_value(epoch_loss),
+                }
+
+                net.save_parameters(
+                    epoch_info["params_path"]
+                )  # TODO: handle possible exception
+
+                save_epoch_info(bp, epoch_info)
+
+                # update best epoch info - needed for the learning rate scheduler
+                if loss_value(epoch_loss) < best_epoch_info["score"]:
+                    best_epoch_info = epoch_info.copy()
+
+                if not trainer.learning_rate == curr_lr:
+                    if best_epoch_info["epoch_no"] == -1:
+                        raise GluonTSUserError(
+                            "Got NaN in first epoch. Try reducing initial learning rate."
+                        )
+
+                    logger.info(
+                        f"Loading parameters from best epoch "
+                        f"({best_epoch_info['epoch_no']})"
+                    )
+                    net.load_parameters(
+                        best_epoch_info["params_path"], self.ctx
+                    )
+
+            if isinstance(self.avg_strategy, AveragingStrategy):
+                logging.info("Computing averaged parameters.")
+                averaged_params_path = self.avg_strategy.apply(gluonts_temp)
+
+                logging.info("Loading averaged parameters.")
+                net.load_parameters(averaged_params_path, self.ctx)
+
+            if isinstance(self.avg_strategy, IterationAveragingStrategy):
+                logging.info("Loading averaged parameters.")
+                self.avg_strategy.load_averaged_model(net)
+
+            logger.info("End model training")

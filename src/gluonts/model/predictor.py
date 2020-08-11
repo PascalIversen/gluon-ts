@@ -35,6 +35,7 @@ from functools import partial
 # Third-party imports
 import mxnet as mx
 import numpy as np
+import torch
 
 # First-party imports
 import gluonts
@@ -61,7 +62,6 @@ from gluonts.support.util import (
 from gluonts.transform import Transformation
 from gluonts.mx.batchify import batchify as mx_batchify
 from gluonts.torch.batchify import batchify as torch_batchify
-from mxnet import torch
 
 from .forecast_generator import (
     PyTorchSampleForecastGenerator,
@@ -317,7 +317,7 @@ class GluonPredictor(NNPredictor):
         self.dtype = dtype
 
     def get_batchify_fn(self):
-        raise partial(mx_batchify, ctx=self.ctx, dtype=self.dtype)
+        return partial(mx_batchify, ctx=self.ctx, dtype=self.dtype)
 
     def hybridize(self, batch: DataBatch) -> None:
         """
@@ -453,7 +453,7 @@ class PyTorchPredictor(NNPredictor):
         self.device = device
 
     def get_batchify_fn(self):
-        raise partial(torch_batchify, device=self.device)
+        return partial(torch_batchify, device=self.device)
 
     def hybridize(self, batch: DataBatch) -> None:
         """
