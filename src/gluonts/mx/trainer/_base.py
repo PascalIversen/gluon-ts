@@ -399,7 +399,8 @@ class Trainer:
 
 
 class PyTorchTrainer:
-    # FIXME Trainer should inherit from common ABC
+    # FIXME PyTorchTrainer and GluonTrainer should inherit from common Trainer ABC
+    # TODO implement
 
     @validated()
     def __init__(

@@ -17,6 +17,7 @@ from functools import partial
 
 # Third-party imports
 import numpy as np
+from gluonts.mx.trainer._base import PyTorchTrainer
 from mxnet.gluon import HybridBlock
 from pydantic import ValidationError
 
@@ -32,6 +33,7 @@ from gluonts.mx.trainer import Trainer
 from gluonts.support.util import get_hybrid_forward_input_names
 from gluonts.transform import Transformation
 from gluonts.mx.batchify import batchify as mx_batchify
+from gluonts.torch.batchify import batchify as torch_batchify
 
 
 class Estimator:
@@ -125,11 +127,12 @@ class TrainOutput(NamedTuple):
 
 
 class NNEstimator(Estimator):
-    """
-    An `Estimator` type with utilities for creating Gluon-based models.
 
-    To extend this class, one needs to implement three methods:
-    `create_transformation`, `create_training_network`, `create_predictor`.
+    """
+        Abstract Estimator for Neural Networks
+
+        To extend this class, one needs to implement three methods:
+        `create_transformation`, `create_training_network`, `create_predictor`.
     """
 
     @validated()
@@ -225,10 +228,8 @@ class NNEstimator(Estimator):
 
 class GluonEstimator(NNEstimator):
     """
-    An `Estimator` type with utilities for creating Gluon-based models.
+    An `NNEstimator` type with utilities for creating Gluon-based models.
 
-    To extend this class, one needs to implement three methods:
-    `create_transformation`, `create_training_network`, `create_predictor`.
     """
 
     @validated()
@@ -261,43 +262,6 @@ class GluonEstimator(NNEstimator):
         except ValidationError as e:
             raise GluonTSHyperparametersError from e
 
-    def create_transformation(self) -> Transformation:
-        """
-        Create and return the transformation needed for training and inference.
-
-        Returns
-        -------
-        Transformation
-            The transformation that will be applied entry-wise to datasets,
-            at training and inference time.
-        """
-        raise NotImplementedError
-
-    def create_training_network(self) -> HybridBlock:
-        """
-        Create and return the network used for training (i.e., computing the
-        loss).
-
-        Returns
-        -------
-        HybridBlock
-            The network that computes the loss given input data.
-        """
-        raise NotImplementedError
-
-    def create_predictor(
-        self, transformation: Transformation, trained_network: HybridBlock
-    ) -> Predictor:
-        """
-        Create and return a predictor object.
-
-        Returns
-        -------
-        Predictor
-            A predictor wrapping a `HybridBlock` used for inference.
-        """
-        raise NotImplementedError
-
     def train_model(
         self, transformation, training_data_loader, validation_data_loader,
     ) -> TrainOutput:
@@ -322,3 +286,33 @@ class GluonEstimator(NNEstimator):
                 trained_net=trained_net,
                 predictor=self.create_predictor(transformation, trained_net),
             )
+
+# TODO implement
+class PyTorchEstimator(NNEstimator):
+    """
+    An `NNEstimator` type with utilities for creating PyTorch-based models.
+
+    """
+
+    @validated()
+    def __init__(
+        self,
+        trainer: PyTorchTrainer,
+        lead_time: int = 0,
+        dtype: DType = np.float32,
+    ) -> None:
+        super().__init__(trainer=trainer, lead_time=lead_time)
+        self.dtype = dtype
+
+    def get_batchify_fn(self):
+        return partial(torch_batchify, device=self.trainer.device)
+
+    @classmethod
+    def from_hyperparameters(cls, **hyperparameters) -> "PyTorchEstimator":
+        raise NotImplementedError
+
+    def train_model(
+        self, transformation, training_data_loader, validation_data_loader,
+    ) -> TrainOutput:
+
+        raise NotImplementedError
