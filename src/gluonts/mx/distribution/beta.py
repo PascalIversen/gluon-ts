@@ -23,11 +23,12 @@ from gluonts.core.component import validated
 
 # First-party imports
 from gluonts.model.common import Tensor
-from gluonts.support.util import erf, erfinv
 
 # Relative imports
 from .distribution import Distribution, _sample_multiple, getF, softplus
 from .distribution_output import DistributionOutput
+from .mixture import MixtureDistributionOutput
+from .deterministic import DeterministicOutput
 
 
 class Beta(Distribution):
@@ -70,13 +71,16 @@ class Beta(Distribution):
         F = self.F
         alpha, beta = self.alpha, self.beta
 
-        return (
+        x = F.where(F.logical_and(x > 0, x < 1), x, x.zeros_like() + 0.5)
+        pdf = (
             (alpha - 1) * F.log(x)
             + (beta - 1) * F.log(1 - x)
             - F.gammaln(alpha)
             - F.gammaln(beta)
             + F.gammaln(alpha + beta)
         )
+        # pdf definition does not extend for x not in (0,1)
+        return F.where(F.logical_and(x > 0, x < 1), pdf, -1 / pdf.zeros_like())
 
     @property
     def mean(self) -> Tensor:
@@ -156,3 +160,20 @@ class BetaOutput(DistributionOutput):
     @property
     def value_in_support(self) -> float:
         return 0.5
+
+
+class ZeroInflatedBetaOutput(MixtureDistributionOutput):
+    def __init__(self):
+        super().__init__([BetaOutput(), DeterministicOutput(0)])
+
+
+class OneInflatedBetaOutput(MixtureDistributionOutput):
+    def __init__(self):
+        super().__init__([BetaOutput(), DeterministicOutput(1)])
+
+
+class ZeroOneInflatedBetaOutput(MixtureDistributionOutput):
+    def __init__(self):
+        super().__init__(
+            [BetaOutput(), DeterministicOutput(0), DeterministicOutput(1)]
+        )

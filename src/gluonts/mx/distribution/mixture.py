@@ -96,6 +96,10 @@ class MixtureDistribution(Distribution):
         # compute mixture log probability by log-sum-exp
         summands = log_mix_weights + component_log_likelihood
         max_val = F.max_axis(summands, axis=-1, keepdims=True)
+
+        # prevent NaN log_prob if all components have zero density at x
+        max_val = F.where(max_val == -np.inf, max_val.zeros_like(), max_val)
+
         sum_exp = F.sum(
             F.exp(F.broadcast_minus(summands, max_val)), axis=-1, keepdims=True
         )

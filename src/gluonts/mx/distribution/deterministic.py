@@ -60,7 +60,7 @@ class Deterministic(Distribution):
     def event_dim(self) -> int:
         return 0
 
-    def log_prob(self, x: Tensor) -> Tensor:
+    def log_prob_pmf(self, x: Tensor) -> Tensor:
         F = self.F
         value = self.value
         is_both_nan = F.broadcast_logical_and(x != x, value != value)
@@ -68,6 +68,19 @@ class Deterministic(Distribution):
             (x == value), is_both_nan
         )
         return F.log(is_equal_or_both_nan)
+
+    def log_prob(self, x: Tensor) -> Tensor:
+        F = self.F
+        value = self.value
+        is_both_nan = F.broadcast_logical_and(x != x, value != value)
+        is_equal_or_both_nan = F.broadcast_logical_or(
+            (x == value), is_both_nan
+        )
+        return F.where(
+            is_equal_or_both_nan,
+            x.zeros_like() + 100000,
+            x.zeros_like() - 100000,
+        )
 
     @property
     def mean(self) -> Tensor:

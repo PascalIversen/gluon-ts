@@ -23,7 +23,6 @@ from gluonts.core.component import validated
 
 # First-party imports
 from gluonts.model.common import Tensor
-from gluonts.support.util import erf, erfinv
 
 # Relative imports
 from .distribution import Distribution, _sample_multiple, getF, softplus
