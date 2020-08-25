@@ -287,6 +287,7 @@ class GluonEstimator(NNEstimator):
                 predictor=self.create_predictor(transformation, trained_net),
             )
 
+
 # TODO implement
 class PyTorchEstimator(NNEstimator):
     """

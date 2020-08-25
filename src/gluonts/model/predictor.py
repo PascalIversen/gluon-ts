@@ -455,19 +455,6 @@ class PyTorchPredictor(NNPredictor):
     def get_batchify_fn(self):
         return partial(torch_batchify, device=self.device)
 
-    def hybridize(self, batch: DataBatch) -> None:
-        """
-        Hybridizes the underlying prediction network.
-
-        Parameters
-        ----------
-        batch
-            A batch of data to use for the required forward pass after the
-            `hybridize()` call.
-        """
-        self.prediction_net.hybridize(active=True)
-        self.prediction_net(*[batch[k] for k in self.input_names])
-
     def __eq__(self, that):
         raise NotImplementedError
 
