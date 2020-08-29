@@ -63,10 +63,7 @@ from gluonts.transform import Transformation
 from gluonts.mx.batchify import batchify as mx_batchify
 from gluonts.torch.batchify import batchify as torch_batchify
 
-from .forecast_generator import (
-    PyTorchSampleForecastGenerator,
-    GluonSampleForecastGenerator,
-)
+from .forecast_generator import SampleForecastGenerator
 
 if TYPE_CHECKING:  # avoid circular import
     from gluonts.model.estimator import Estimator  # noqa
@@ -297,7 +294,7 @@ class GluonPredictor(NNPredictor):
         ctx: mx.Context,
         input_transform: Transformation,
         lead_time: int = 0,
-        forecast_generator: GluonSampleForecastGenerator = GluonSampleForecastGenerator(),
+        forecast_generator: SampleForecastGenerator = SampleForecastGenerator(),
         output_transform: Optional[OutputTransform] = None,
         dtype: DType = np.float32,
     ) -> None:
@@ -435,7 +432,7 @@ class PyTorchPredictor(NNPredictor):
         device: torch.device,
         input_transform: Transformation,
         lead_time: int = 0,
-        forecast_generator: PyTorchSampleForecastGenerator = PyTorchSampleForecastGenerator(),
+        forecast_generator: SampleForecastGenerator = SampleForecastGenerator(),
         output_transform: Optional[OutputTransform] = None,
     ) -> None:
         super().__init__(
@@ -543,7 +540,7 @@ class RepresentableBlockPredictor(GluonPredictor):
         ctx: mx.Context,
         input_transform: Transformation,
         lead_time: int = 0,
-        forecast_generator: GluonSampleForecastGenerator = GluonSampleForecastGenerator(),
+        forecast_generator: SampleForecastGenerator = SampleForecastGenerator(),
         output_transform: Optional[
             Callable[[DataEntry, np.ndarray], np.ndarray]
         ] = None,

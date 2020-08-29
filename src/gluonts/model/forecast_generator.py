@@ -13,11 +13,12 @@
 
 import logging
 from typing import Any, Callable, Iterator, List, Optional
+from functools import singledispatch
 
 # Third-party imports
 import mxnet as mx
 import numpy as np
-
+import torch
 from gluonts.core.component import validated
 from gluonts.dataset.common import DataEntry
 from gluonts.dataset.field_names import FieldName
@@ -37,6 +38,21 @@ BlockType = mx.gluon.Block
 
 
 LOG_CACHE = set([])
+# different deep learning frameworks handle the tensor to numpy conversion differently,
+# use a dispatching function to prevent needing a ForecastGenerators for each framework
+@singledispatch
+def to_numpy(tensor) -> np.ndarray:
+    raise NotImplementedError
+
+
+@to_numpy.register(torch.Tensor)
+def _(tensor: torch.Tensor) -> np.ndarray:
+    return tensor.data.numpy()
+
+
+@to_numpy.register(mx.ndarray)
+def _(tensor: mx.ndarray) -> np.ndarray:
+    return tensor.asnumpy()
 
 
 def log_once(msg):
@@ -90,10 +106,6 @@ class ForecastGenerator:
         **kwargs
     ) -> Iterator[Forecast]:
         raise NotImplementedError()
-
-    @classmethod
-    def to_numpy(cls, tensor) -> np.ndarray:
-        raise NotImplementedError
 
 
 class DistributionForecastGenerator(ForecastGenerator):
@@ -157,7 +169,7 @@ class QuantileForecastGenerator(ForecastGenerator):
     ) -> Iterator[Forecast]:
         for batch in inference_data_loader:
             inputs = [batch[k] for k in input_names]
-            outputs = self.to_numpy(prediction_net(*inputs))
+            outputs = to_numpy(prediction_net(*inputs))
             if output_transform is not None:
                 outputs = output_transform(batch, outputs)
 
@@ -198,14 +210,14 @@ class SampleForecastGenerator(ForecastGenerator):
     ) -> Iterator[Forecast]:
         for batch in inference_data_loader:
             inputs = [batch[k] for k in input_names]
-            outputs = self.to_numpy(prediction_net(*inputs))
+            outputs = to_numpy(prediction_net(*inputs))
             if output_transform is not None:
                 outputs = output_transform(batch, outputs)
             if num_samples:
                 num_collected_samples = outputs[0].shape[0]
                 collected_samples = [outputs]
                 while num_collected_samples < num_samples:
-                    outputs = self.to_numpy(prediction_net(*inputs))
+                    outputs = to_numpy(prediction_net(*inputs))
                     if output_transform is not None:
                         outputs = output_transform(batch, outputs)
                     collected_samples.append(outputs)
@@ -227,21 +239,3 @@ class SampleForecastGenerator(ForecastGenerator):
                     info=batch["info"][i] if "info" in batch else None,
                 )
             assert i + 1 == len(batch["forecast_start"])
-
-
-class GluonSampleForecastGenerator(SampleForecastGenerator):
-    @classmethod
-    def to_numpy(cls, tensor: mx.ndarray) -> np.ndarray:
-        return tensor.asnumpy()
-
-
-class GluonQuantileForecastGenerator(QuantileForecastGenerator):
-    @classmethod
-    def to_numpy(cls, tensor: mx.ndarray) -> np.ndarray:
-        return tensor.asnumpy()
-
-
-class PyTorchSampleForecastGenerator(SampleForecastGenerator):
-    @classmethod
-    def to_numpy(cls, tensor: mx.ndarray) -> np.ndarray:
-        return tensor.data.numpy()
