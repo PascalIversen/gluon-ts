@@ -23,6 +23,13 @@ from gluonts.core.component import validated
 from gluonts.model.common import Tensor
 
 # Relative imports
+from gluonts.mx.distribution import (
+    Deterministic,
+    MixtureDistributionOutput,
+    MixtureDistribution,
+    DeterministicOutput,
+)
+
 from .distribution import Distribution, _sample_multiple, getF, softplus
 from .distribution_output import DistributionOutput
 
@@ -116,3 +123,22 @@ class PoissonOutput(DistributionOutput):
     @property
     def event_shape(self) -> Tuple:
         return ()
+
+    class ZeroInflatedNegativeBinomial(MixtureDistribution):
+        @validated()
+        def __init__(self, rate: Tensor, zero_probability: Tensor) -> None:
+            F = getF(rate)
+            mixture_probs = F.stack(
+                1 - zero_probability, zero_probability, axis=-1
+            )
+            super().__init__(
+                components=[
+                    Poisson(rate=rate),
+                    Deterministic(value=rate.zeros_like()),
+                ],
+                mixture_probs=mixture_probs,
+            )
+
+    class ZeroInflatedPoissonOutput(MixtureDistributionOutput):
+        def __init__(self):
+            super().__init__([PoissonOutput(), DeterministicOutput(0)])
