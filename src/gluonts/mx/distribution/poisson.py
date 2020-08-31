@@ -124,7 +124,7 @@ class PoissonOutput(DistributionOutput):
     def event_shape(self) -> Tuple:
         return ()
 
-    class ZeroInflatedNegativeBinomial(MixtureDistribution):
+    class ZeroInflatedPoisson(MixtureDistribution):
         @validated()
         def __init__(self, rate: Tensor, zero_probability: Tensor) -> None:
             F = getF(rate)
