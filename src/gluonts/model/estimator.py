@@ -12,12 +12,13 @@
 # permissions and limitations under the License.
 
 # Standard library imports
-from typing import NamedTuple, Optional, Callable
+import inspect
+from typing import NamedTuple, Optional, Callable, Union
 from functools import partial
 
 # Third-party imports
 import numpy as np
-from gluonts.mx.trainer._base import PyTorchTrainer
+from gluonts.torch.trainer import Trainer as PyTorchTrainer
 from mxnet.gluon import HybridBlock
 from pydantic import ValidationError
 
@@ -29,7 +30,7 @@ from gluonts.core.exception import GluonTSHyperparametersError
 from gluonts.dataset.common import Dataset
 from gluonts.dataset.loader import TrainDataLoader, ValidationDataLoader
 from gluonts.model.predictor import Predictor
-from gluonts.mx.trainer import Trainer
+from gluonts.mx.trainer import Trainer as GluonTrainer
 from gluonts.support.util import get_hybrid_forward_input_names
 from gluonts.transform import Transformation
 from gluonts.mx.batchify import batchify as mx_batchify
@@ -136,7 +137,9 @@ class NNEstimator(Estimator):
     """
 
     @validated()
-    def __init__(self, trainer: Trainer, lead_time: int = 0) -> None:
+    def __init__(
+        self, trainer: Union[GluonTrainer, PyTorchTrainer], lead_time: int = 0
+    ) -> None:
         super().__init__(lead_time=lead_time)
         self.trainer = trainer
 
@@ -234,7 +237,10 @@ class GluonEstimator(NNEstimator):
 
     @validated()
     def __init__(
-        self, trainer: Trainer, lead_time: int = 0, dtype: DType = np.float32
+        self,
+        trainer: GluonTrainer,
+        lead_time: int = 0,
+        dtype: DType = np.float32,
     ) -> None:
         super().__init__(trainer=trainer, lead_time=lead_time)
         self.dtype = dtype
@@ -254,7 +260,7 @@ class GluonEstimator(NNEstimator):
             )
 
         try:
-            trainer = from_hyperparameters(Trainer, **hyperparameters)
+            trainer = from_hyperparameters(GluonTrainer, **hyperparameters)
 
             return cls(
                 **Model(**{**hyperparameters, "trainer": trainer}).__dict__
@@ -316,4 +322,28 @@ class PyTorchEstimator(NNEstimator):
         self, transformation, training_data_loader, validation_data_loader,
     ) -> TrainOutput:
 
-        raise NotImplementedError
+        trained_net = self.create_training_network()
+
+        def get_forward_input_names(hb):
+            params = inspect.signature(hb.forward).parameters
+            param_names = [
+                k for k, v in params.items() if not str(v).startswith("*")
+            ]
+
+            return param_names  # skip: F
+
+        self.trainer(
+            net=trained_net,
+            input_names=get_forward_input_names(trained_net),
+            train_iter=training_data_loader,
+            validation_iter=validation_data_loader,
+        )
+
+        # with self.trainer.ctx:
+        #     # ensure that the prediction network is created within the same MXNet
+        #     # context as the one that was used during training
+        return TrainOutput(
+            transformation=transformation,
+            trained_net=trained_net,
+            predictor=self.create_predictor(transformation, trained_net),
+        )
