@@ -11,10 +11,8 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 
-from typing import List, Optional, Union, TYPE_CHECKING
+from typing import List, Optional, Union
 
-if TYPE_CHECKING:
-    import mxnet as mx
 import functools
 
 import numpy as np
@@ -29,6 +27,7 @@ def _is_stackable(arrays: List, axis: int = 0) -> bool:
     Check if elements are scalars, have too few dimensions, or their
     target axes have equal length; i.e. they are directly `stack` able.
     """
+    import mxnet as mx
 
     if isinstance(arrays[0], (mx.nd.NDArray, np.ndarray)):
         s = set(arr.shape[axis] for arr in arrays)
@@ -37,9 +36,7 @@ def _is_stackable(arrays: List, axis: int = 0) -> bool:
 
 
 # TODO: should the following contempate mxnet arrays or just numpy arrays?
-def _pad_arrays(
-    data: List[Union[np.ndarray, mx.nd.NDArray]], axis: int = 0,
-) -> List[Union[np.ndarray, mx.nd.NDArray]]:
+def _pad_arrays(data: List, axis: int = 0,) -> List:
     import mxnet as mx
 
     assert isinstance(data[0], (np.ndarray, mx.nd.NDArray))
@@ -68,7 +65,7 @@ def _pad_arrays(
 
 def stack(
     data,
-    ctx: Optional[mx.context.Context] = None,
+    ctx: Optional = None,
     dtype: Optional[DType] = np.float32,
     variable_length: bool = False,
 ):
@@ -89,7 +86,7 @@ def stack(
 
 def batchify(
     data: List[dict],
-    ctx: Optional[mx.context.Context] = None,
+    ctx: Optional = None,
     dtype: Optional[DType] = np.float32,
     variable_length: bool = False,
 ) -> DataBatch:
@@ -104,8 +101,10 @@ def batchify(
     }
 
 
-def as_in_context(batch: dict, ctx: mx.Context = None) -> DataBatch:
+def as_in_context(batch: dict, ctx=None) -> DataBatch:
     """Move data into new context, should only be in main process."""
+    import mxnet as mx
+
     batch = {
         k: v.as_in_context(ctx) if isinstance(v, mx.nd.NDArray)
         # Workaround due to MXNet not being able to handle NDArrays with 0 in shape properly:
