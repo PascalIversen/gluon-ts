@@ -16,6 +16,13 @@ import itertools
 import random
 import logging
 from multiprocessing import Process, Manager, Queue
+import multiprocessing as mp
+
+try:
+    mp.set_start_method("spawn")
+except RuntimeError:
+    pass
+
 from multiprocessing.reduction import ForkingPickler
 import io
 import pickle
