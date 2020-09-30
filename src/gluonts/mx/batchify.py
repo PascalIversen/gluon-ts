@@ -11,11 +11,13 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 
-from typing import List, Optional, Union
+from typing import List, Optional, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import mxnet as mx
 import functools
 
 import numpy as np
-import mxnet as mx
 
 from gluonts.core.component import DType
 from gluonts.dataset.common import DataBatch
@@ -27,6 +29,7 @@ def _is_stackable(arrays: List, axis: int = 0) -> bool:
     Check if elements are scalars, have too few dimensions, or their
     target axes have equal length; i.e. they are directly `stack` able.
     """
+
     if isinstance(arrays[0], (mx.nd.NDArray, np.ndarray)):
         s = set(arr.shape[axis] for arr in arrays)
         return len(s) <= 1 and arrays[0].shape[axis] != 0
@@ -37,6 +40,8 @@ def _is_stackable(arrays: List, axis: int = 0) -> bool:
 def _pad_arrays(
     data: List[Union[np.ndarray, mx.nd.NDArray]], axis: int = 0,
 ) -> List[Union[np.ndarray, mx.nd.NDArray]]:
+    import mxnet as mx
+
     assert isinstance(data[0], (np.ndarray, mx.nd.NDArray))
     is_mx = isinstance(data[0], mx.nd.NDArray)
 
@@ -67,6 +72,8 @@ def stack(
     dtype: Optional[DType] = np.float32,
     variable_length: bool = False,
 ):
+    import mxnet as mx
+
     if variable_length and not _is_stackable(data):
         data = _pad_arrays(data, axis=0)
     if isinstance(data[0], mx.nd.NDArray):
