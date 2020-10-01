@@ -42,6 +42,8 @@ from gluonts.model.tpp.distribution import Loglogistic, Weibull
 
 from gluonts.testutil import empirical_cdf
 
+np.random.seed(1)
+mx.random.seed(1)
 
 test_cases = [
     (
