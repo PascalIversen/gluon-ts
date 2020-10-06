@@ -242,16 +242,13 @@ class GluonEstimator(Estimator):
         with self.trainer.ctx:
             trained_net = self.create_training_network()
 
-        self.trainer(
-            net=trained_net,
-            input_names=get_hybrid_forward_input_names(trained_net),
-            train_iter=training_data_loader,
-            validation_iter=validation_data_loader,
-        )
+            self.trainer(
+                net=trained_net,
+                input_names=get_hybrid_forward_input_names(trained_net),
+                train_iter=training_data_loader,
+                validation_iter=validation_data_loader,
+            )
 
-        with self.trainer.ctx:
-            # ensure that the prediction network is created within the same MXNet
-            # context as the one that was used during training
             return TrainOutput(
                 transformation=transformation,
                 trained_net=trained_net,
