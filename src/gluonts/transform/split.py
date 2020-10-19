@@ -16,6 +16,7 @@ from typing import Iterator, List, Optional
 
 import numpy as np
 import pandas as pd
+import math
 
 from gluonts.core.component import validated
 from gluonts.core.exception import GluonTSDateBoundsError
@@ -113,6 +114,10 @@ class InstanceSplitter(FlatMapTransformation):
         data is padded or not. (default: True)
     dummy_value
         Value to use for padding. (default: 0.0)
+    validation_start
+        start date for validation.
+        If validation_start is not None, the InstanceSplitter will only
+        produce instances whose future part begins after or at the validation_start. (default: None)
     """
 
     @validated()
@@ -130,6 +135,7 @@ class InstanceSplitter(FlatMapTransformation):
         time_series_fields: Optional[List[str]] = None,
         pick_incomplete: bool = True,
         dummy_value: float = 0.0,
+        validation_start: Optional[pd.Timestamp] = None,
     ) -> None:
 
         assert future_length > 0
@@ -148,6 +154,7 @@ class InstanceSplitter(FlatMapTransformation):
         self.forecast_start_field = forecast_start_field
         self.pick_incomplete = pick_incomplete
         self.dummy_value = dummy_value
+        self.validation_start = validation_start
 
     def _past(self, col_name):
         return f"past_{col_name}"
@@ -171,18 +178,32 @@ class InstanceSplitter(FlatMapTransformation):
             else self.past_length + self.future_length
         ) + self.lead_time
 
+        offset = 0
+        if self.validation_start is not None:
+            assert (
+                data[self.start_field] <= self.validation_start
+            ), "InstanceSplitters validation_start needs to be after the start date"
+            offset = int(
+                math.ceil(
+                    (self.validation_start - data[self.start_field])
+                    / data[self.start_field].freq
+                )
+            )
+            # TODO check edge cases
+
         if is_train:
             sampling_bounds = (
                 (
-                    0,
+                    offset,
                     len_target - self.future_length - self.lead_time,
                 )  # TODO: create parameter lower sampling bound for NBEATS
                 if self.pick_incomplete
                 else (
-                    self.past_length,
+                    max(offset, self.past_length),
                     len_target - self.future_length - self.lead_time,
                 )
             )
+            print(sampling_bounds)
 
             # We currently cannot handle time series that are
             # too short during training, so we just skip these.
