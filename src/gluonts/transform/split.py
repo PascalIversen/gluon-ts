@@ -189,7 +189,6 @@ class InstanceSplitter(FlatMapTransformation):
                     / data[self.start_field].freq
                 )
             )
-            # TODO check edge cases
 
         if is_train:
             sampling_bounds = (
@@ -203,7 +202,6 @@ class InstanceSplitter(FlatMapTransformation):
                     len_target - self.future_length - self.lead_time,
                 )
             )
-            print(sampling_bounds)
 
             # We currently cannot handle time series that are
             # too short during training, so we just skip these.
