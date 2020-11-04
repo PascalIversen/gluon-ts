@@ -54,7 +54,7 @@ def vertical_split(dataset, offset_from_end):
         prediction_length=offset_from_end, split_offset=split_offset
     )
 
-    (_, dataset_train), (_, dataset_validation) = splitter.split(dataset.train)
+    (_, dataset_train), (_, dataset_validation) = splitter.split(dataset)
     return dataset_train, dataset_validation
 
 
@@ -65,11 +65,11 @@ def horizontal_split(dataset, item_split_ratio):
     n_train_items = int(len(dataset) * item_split_ratio)
 
     dataset_in_sample = [
-        ts for ts in dataset if ts["item_id"] < n_train_items
+        ts for ts in dataset if int(ts["item_id"]) < n_train_items
     ]  # assuming items are zero indexed
 
     dataset_out_of_sample = [
-        ts for ts in dataset if ts["item_id"] >= n_train_items
+        ts for ts in dataset if int(ts["item_id"]) >= n_train_items
     ]
 
     return dataset_in_sample, dataset_out_of_sample
