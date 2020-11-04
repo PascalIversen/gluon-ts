@@ -182,7 +182,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--train-item-ratio",
-        type=int,
+        type=float,
         default=os.environ["SM_HP_TRAIN_ITEM_RATIO"],
     )
     parser.add_argument(
