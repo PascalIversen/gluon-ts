@@ -47,11 +47,8 @@ def train(arguments):
     estimator_config = Path(arguments.estimator) / "estimator.json"
     with estimator_config.open() as config_file:
         Estimator = serde.load_json(config_file.read())
-    estimator = Estimator(
-        prediction_length=24,
-        freq="H",
-        trainer=Trainer(ctx="gpu", epochs=4),  # optional
-    )
+
+    estimator = Estimator(**arguments.estimator_kwargs)
 
     logger.info("Downloading dataset.")
     if arguments.s3_dataset is None:
@@ -129,6 +126,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dataset", type=str, default=os.environ["SM_HP_DATASET"]
+    )
+    parser.add_argument(
+        "--estimator_kwargs",
+        type=str,
+        default=os.environ["SM_HP_ESTIMATOR_KWARGS"],
     )
     parser.add_argument(
         "--num-samples", type=int, default=os.environ["SM_HP_NUM_SAMPLES"]
