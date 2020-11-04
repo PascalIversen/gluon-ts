@@ -25,6 +25,7 @@ from gluonts.core import serde
 from gluonts.dataset import common
 from gluonts.dataset.repository import datasets
 from gluonts.evaluation import Evaluator, backtest
+from gluonts.dataset.split import OffsetSplitter
 
 # Third-party imports
 
@@ -38,6 +39,40 @@ logger = logging.getLogger(__name__)
 
 # TODO: implement model_fn, input_fn, predict_fn, and output_fn !!
 # TODO: segment script for readability
+
+
+def vertical_split(dataset, offset_from_end):
+    """
+    Split a dataset time-wise in a train and validation dataset.
+    The train dataset is a subset of the test dataset which contains offset_from_end-less observations.
+    """
+    dataset_length = len(next(iter(dataset))["target"])
+
+    split_offset = dataset_length - offset_from_end
+
+    splitter = OffsetSplitter(
+        prediction_length=offset_from_end, split_offset=split_offset
+    )
+
+    (_, dataset_train), (_, dataset_validation) = splitter.split(dataset.train)
+    return dataset_train, dataset_validation
+
+
+def horizontal_split(dataset, item_split_ratio):
+    """
+    Split a dataset item-wise.
+    """
+    n_train_items = int(len(dataset) * item_split_ratio)
+
+    dataset_in_sample = [
+        ts for ts in dataset if ts["item_id"] < n_train_items
+    ]  # assuming items are zero indexed
+
+    dataset_out_of_sample = [
+        ts for ts in dataset if ts["item_id"] >= n_train_items
+    ]
+
+    return dataset_in_sample, dataset_out_of_sample
 
 
 def train(arguments):
@@ -62,11 +97,30 @@ def train(arguments):
             train=s3_dataset_dir / "train",
             test=s3_dataset_dir / "test",
         )
+    prediction_length = dataset.metadata.prediction_length
 
+    dataset_train, dataset_validation = vertical_split(
+        dataset=dataset.train, offset_from_end=prediction_length
+    )  # type: ignore
+
+    dataset_train, _ = horizontal_split(
+        dataset=dataset_train, item_split_ratio=arguments.train_item_ratio
+    )
+
+    (
+        dataset_validation_in_sample,
+        dataset_validation_out_of_sample,
+    ) = horizontal_split(
+        dataset=dataset_validation, item_split_ratio=arguments.train_item_ratio
+    )
+
+    dataset_test_in_sample, dataset_test_out_of_sample = horizontal_split(
+        dataset=dataset.test, item_split_ratio=arguments.train_item_ratio
+    )  # type: ignore
     logger.info("Starting model training.")
-    predictor = estimator.train(dataset.train)
+    predictor = estimator.train(dataset_train)
     forecast_it, ts_it = backtest.make_evaluation_predictions(
-        dataset=dataset.test,
+        dataset=dataset_test_in_sample,
         predictor=predictor,
         num_samples=int(arguments.num_samples),
     )
@@ -75,7 +129,7 @@ def train(arguments):
     evaluator = Evaluator(quantiles=eval(arguments.quantiles))
 
     agg_metrics, item_metrics = evaluator(
-        ts_it, forecast_it, num_series=len(list(dataset.test))
+        ts_it, forecast_it, num_series=len(list(dataset_test_in_sample))
     )
 
     # required for metric tracking.
@@ -88,10 +142,6 @@ def train(arguments):
         json.dump(agg_metrics, f)
     with open(metrics_output_dir / "item_metrics.csv", "w") as f:
         item_metrics.to_csv(f, index=False)
-
-    # save the model
-    model_output_dir = Path(arguments.model_dir)
-    predictor.serialize(model_output_dir)
 
 
 if __name__ == "__main__":
@@ -129,6 +179,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num-samples", type=int, default=os.environ["SM_HP_NUM_SAMPLES"]
+    )
+    parser.add_argument(
+        "--train-item-ratio",
+        type=int,
+        default=os.environ["SM_HP_TRAIN_ITEM_RATIO"],
     )
     parser.add_argument(
         "--quantiles", type=str, default=os.environ["SM_HP_QUANTILES"]

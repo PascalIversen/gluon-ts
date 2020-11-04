@@ -38,7 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def train(arguments):
+def run(arguments):
     """
     Generic train method that trains a specified estimator on a specified dataset.
     """

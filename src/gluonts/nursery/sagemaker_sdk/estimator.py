@@ -426,7 +426,13 @@ class GluonTSFramework(Framework):
         return init_params
 
     def _initialize_job(
-        self, monitored_metrics, dataset, num_samples, quantiles, job_name
+        self,
+        monitored_metrics,
+        dataset,
+        num_samples,
+        quantiles,
+        job_name,
+        train_item_ratio,
     ):
         if self.sagemaker_session.local_mode:
             # TODO implement local mode support
@@ -441,6 +447,7 @@ class GluonTSFramework(Framework):
             DATASET=dataset,  # pass dataset as hyper-parameter
             NUM_SAMPLES=num_samples,
             QUANTILES=str(quantiles),
+            TRAIN_ITEM_RATIO=train_item_ratio,
         )
 
         # needed to set default output and code location properly
@@ -518,6 +525,7 @@ class GluonTSFramework(Framework):
         estimator: Estimator,
         num_samples: int = NUM_SAMPLES,
         quantiles: List[float] = QUANTILES,
+        train_item_ratio: float = 0.7,
         monitored_metrics: List[str] = MONITORED_METRICS,
         wait: bool = True,
         logs: bool = True,
@@ -572,7 +580,12 @@ class GluonTSFramework(Framework):
             job_name = make_job_name(self.base_job_name)
 
         locations = self._initialize_job(
-            monitored_metrics, dataset, num_samples, quantiles, job_name
+            monitored_metrics,
+            dataset,
+            num_samples,
+            quantiles,
+            job_name,
+            train_item_ratio,
         )
         self._upload_estimator(locations, estimator)
 
