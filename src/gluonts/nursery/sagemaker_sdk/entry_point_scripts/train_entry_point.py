@@ -119,29 +119,45 @@ def train(arguments):
     )  # type: ignore
     logger.info("Starting model training.")
     predictor = estimator.train(dataset_train)
-    forecast_it, ts_it = backtest.make_evaluation_predictions(
-        dataset=dataset_test_in_sample,
-        predictor=predictor,
-        num_samples=int(arguments.num_samples),
-    )
 
     logger.info("Starting model evaluation.")
-    evaluator = Evaluator(quantiles=eval(arguments.quantiles))
 
-    agg_metrics, item_metrics = evaluator(
-        ts_it, forecast_it, num_series=len(list(dataset_test_in_sample))
+    def save_metrics(predictor, test_dataset, filename):
+        forecast_it, ts_it = backtest.make_evaluation_predictions(
+            dataset=test_dataset,
+            predictor=predictor,
+            num_samples=int(arguments.num_samples),
+        )
+        evaluator = Evaluator(quantiles=eval(arguments.quantiles))
+
+        agg_metrics, item_metrics = evaluator(
+            ts_it, forecast_it, num_series=len(list(test_dataset))
+        )
+
+        # required for metric tracking.
+        for name, value in agg_metrics.items():
+            logger.info(f"gluonts[metric-{name}]: {value}")
+
+        # save the evaluation results
+        metrics_output_dir = Path(arguments.output_data_dir)
+        with open(metrics_output_dir / f"{filename}.json", "w") as f:
+            json.dump(agg_metrics, f)
+
+    n_job = arguments.n_job
+    save_metrics(
+        predictor,
+        dataset_validation_in_sample,
+        f"{n_job}_validation_in_sample",
     )
-
-    # required for metric tracking.
-    for name, value in agg_metrics.items():
-        logger.info(f"gluonts[metric-{name}]: {value}")
-
-    # save the evaluation results
-    metrics_output_dir = Path(arguments.output_data_dir)
-    with open(metrics_output_dir / "agg_metrics.json", "w") as f:
-        json.dump(agg_metrics, f)
-    with open(metrics_output_dir / "item_metrics.csv", "w") as f:
-        item_metrics.to_csv(f, index=False)
+    save_metrics(
+        predictor,
+        dataset_validation_out_of_sample,
+        f"{n_job}_validation_out_of_sample",
+    )
+    save_metrics(predictor, dataset_test_in_sample, f"{n_job}_test_in_sample")
+    save_metrics(
+        predictor, dataset_test_out_of_sample, f"{n_job}_test_out_of_sample"
+    )
 
 
 if __name__ == "__main__":
@@ -180,6 +196,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-samples", type=int, default=os.environ["SM_HP_NUM_SAMPLES"]
     )
+    parser.add_argument("--n-job", type=int, default=os.environ["SM_HP_N_JOB"])
     parser.add_argument(
         "--train-item-ratio",
         type=float,

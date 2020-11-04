@@ -432,6 +432,7 @@ class GluonTSFramework(Framework):
         num_samples,
         quantiles,
         job_name,
+        n_job,
         train_item_ratio,
     ):
         if self.sagemaker_session.local_mode:
@@ -447,6 +448,7 @@ class GluonTSFramework(Framework):
             DATASET=dataset,  # pass dataset as hyper-parameter
             NUM_SAMPLES=num_samples,
             QUANTILES=str(quantiles),
+            N_JOB=n_job,
             TRAIN_ITEM_RATIO=train_item_ratio,
         )
 
@@ -525,6 +527,7 @@ class GluonTSFramework(Framework):
         estimator: Estimator,
         num_samples: int = NUM_SAMPLES,
         quantiles: List[float] = QUANTILES,
+        n_job: int = 0,
         train_item_ratio: float = 0.7,
         monitored_metrics: List[str] = MONITORED_METRICS,
         wait: bool = True,
@@ -585,6 +588,7 @@ class GluonTSFramework(Framework):
             num_samples,
             quantiles,
             job_name,
+            n_job,
             train_item_ratio,
         )
         self._upload_estimator(locations, estimator)
