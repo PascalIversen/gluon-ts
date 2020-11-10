@@ -126,6 +126,7 @@ class Trainer:
             AveragingStrategy, IterationAveragingStrategy
         ] = SelectNBestMean(num_models=1),
         post_initialize_cb: Optional[Callable[[mx.gluon.Block], None]] = None,
+        post_epoch_callback: Optional[Callable] = None,
     ) -> None:
 
         assert (
@@ -163,6 +164,7 @@ class Trainer:
         self.ctx = ctx if ctx is not None else get_mxnet_context()
         self.halt = False
         self.post_initialize_cb = post_initialize_cb
+        self.post_epoch_callback = post_epoch_callback
 
     def set_halt(self, signum: int, stack_frame: Any) -> None:
         logger.info("Received signal: {}".format(signum))
@@ -277,7 +279,9 @@ class Trainer:
 
                             if not np.isfinite(ndarray.sum(loss).asscalar()):
                                 logger.warning(
-                                    "Batch [%d] of Epoch[%d] gave NaN loss and it will be ignored", batch_no, epoch_no
+                                    "Batch [%d] of Epoch[%d] gave NaN loss and it will be ignored",
+                                    batch_no,
+                                    epoch_no,
                                 )
                             else:
                                 if is_training:
@@ -347,6 +351,14 @@ class Trainer:
                         epoch_loss = loop(
                             epoch_no, validation_iter, is_training=False
                         )
+                    should_continue = True
+
+                    if self.post_epoch_callback is not None:
+                        should_continue = self.post_epoch_callback(
+                            epoch_no=epoch_no,
+                            epoch_loss=epoch_loss,
+                            training_network=net,
+                        )
 
                     # update average trigger
                     if isinstance(
@@ -357,8 +369,12 @@ class Trainer:
                         )
                         # once triggered, update the average immediately
                         self.avg_strategy.apply(net)
+                    if not lr_scheduler.step(loss_value(epoch_loss)):
+                        should_continue = False
+                        print(
+                            "Early stopping based on learning rate scheduler."
+                        )
 
-                    should_continue = lr_scheduler.step(loss_value(epoch_loss))
                     if isinstance(
                         self.avg_strategy, IterationAveragingStrategy
                     ):
