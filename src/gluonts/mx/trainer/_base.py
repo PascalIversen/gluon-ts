@@ -125,7 +125,7 @@ class Trainer:
         avg_strategy: Union[
             AveragingStrategy, IterationAveragingStrategy
         ] = SelectNBestMean(num_models=1),
-        post_initialize_cb: Optional[Callable[[mx.gluon.Block], None]] = None,
+        post_initialize_callback: Optional[Callable[[mx.gluon.Block], None]] = None,
         post_epoch_callback: Optional[Callable] = None,
     ) -> None:
 
@@ -163,7 +163,7 @@ class Trainer:
         self.avg_strategy = avg_strategy
         self.ctx = ctx if ctx is not None else get_mxnet_context()
         self.halt = False
-        self.post_initialize_cb = post_initialize_cb
+        self.post_initialize_callback = post_initialize_callback
         self.post_epoch_callback = post_epoch_callback
 
     def set_halt(self, signum: int, stack_frame: Any) -> None:
@@ -357,7 +357,7 @@ class Trainer:
                         should_continue = self.post_epoch_callback(
                             epoch_no=epoch_no,
                             epoch_loss=epoch_loss,
-                            training_network=net,
+                            trainer=trainer,
                         )
 
                     # update average trigger
