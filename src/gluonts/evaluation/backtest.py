@@ -29,7 +29,6 @@ from gluonts.dataset.stat import (
     calculate_dataset_statistics,
 )
 from gluonts.evaluation import Evaluator
-from gluonts.model.estimator import Estimator
 from gluonts.model.forecast import Forecast
 from gluonts.model.predictor import Predictor
 from gluonts.support.util import maybe_len
@@ -181,6 +180,8 @@ def backtest_metrics(
 
     return agg_metrics, item_metrics
 
+
+from gluonts.model.estimator import Estimator
 
 # TODO does it make sense to have this then?
 class BacktestInformation(NamedTuple):
