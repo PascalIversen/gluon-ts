@@ -11,20 +11,28 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 
-from typing import Iterable
+from typing import Iterable, List
+import itertools
 
 import pytest
 
 from gluonts.dataset.artificial import constant_dataset
-from gluonts.dataset.loader import PseudoShuffledIterator
+from gluonts.itertools import pseudo_shuffled, cyclic
+
+
+@pytest.mark.parametrize(
+    "data, n, expected", [([1, 2, 3], 7, [1, 2, 3, 1, 2, 3, 1]), ([], 4, [])]
+)
+def test_cyclic(data: Iterable, n: int, expected: List) -> None:
+    cyclic_data = cyclic(data)
+    actual = list(itertools.islice(cyclic_data, n))
+    assert actual == expected
 
 
 @pytest.mark.parametrize("data", [range(20), constant_dataset()[1],])
-def test_shuffle_iter(data: Iterable) -> None:
+def test_pseudo_shuffled(data: Iterable) -> None:
     list_data = list(data)
-    shuffled_iter = PseudoShuffledIterator(
-        iter(list_data), shuffle_buffer_length=5
-    )
+    shuffled_iter = pseudo_shuffled(iter(list_data), shuffle_buffer_length=5)
     shuffled_data = list(shuffled_iter)
     assert len(shuffled_data) == len(list_data)
     assert all(d in shuffled_data for d in list_data)

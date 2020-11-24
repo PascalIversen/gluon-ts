@@ -47,13 +47,11 @@ from gluonts.support.util import (
 )
 from gluonts.transform import Transformation
 from gluonts.mx.batchify import batchify
-from gluonts.model.predictor import Predictor
+from gluonts.model.predictor import Predictor, OutputTransform
 from gluonts.model.forecast_generator import (
     ForecastGenerator,
     SampleForecastGenerator,
 )
-
-OutputTransform = Callable[[DataEntry, np.ndarray], np.ndarray]
 
 from gluonts.model.forecast_generator import predict_to_numpy
 
@@ -134,18 +132,24 @@ class GluonPredictor(Predictor):
         self.prediction_net(*[batch[k] for k in self.input_names])
 
     def as_symbol_block_predictor(
-        self, batch: DataBatch
+        self,
+        batch: Optional[DataBatch] = None,
+        dataset: Optional[Dataset] = None,
     ) -> "SymbolBlockPredictor":
         """
         Returns a variant of the current :class:`GluonPredictor` backed
         by a Gluon `SymbolBlock`. If the current predictor is already a
         :class:`SymbolBlockPredictor`, it just returns itself.
 
+        One of batch or datset must be set.
+
         Parameters
         ----------
         batch
             A batch of data to use for the required forward pass after the
             `hybridize()` call of the underlying network.
+        dataset
+            Dataset from which a batch is extracted if batch is not set.
 
         Returns
         -------
@@ -237,7 +241,9 @@ class SymbolBlockPredictor(GluonPredictor):
     BlockType = mx.gluon.SymbolBlock
 
     def as_symbol_block_predictor(
-        self, batch: DataBatch
+        self,
+        batch: Optional[DataBatch] = None,
+        dataset: Optional[Dataset] = None,
     ) -> "SymbolBlockPredictor":
         return self
 
@@ -323,8 +329,20 @@ class RepresentableBlockPredictor(GluonPredictor):
         )
 
     def as_symbol_block_predictor(
-        self, batch: DataBatch
+        self,
+        batch: Optional[DataBatch] = None,
+        dataset: Optional[Dataset] = None,
     ) -> SymbolBlockPredictor:
+
+        if batch is None:
+            data_loader = InferenceDataLoader(
+                dataset,
+                transform=self.input_transform,
+                batch_size=self.batch_size,
+                stack_fn=partial(batchify, ctx=self.ctx, dtype=self.dtype),
+            )
+            batch = next(iter(data_loader))
+
         with self.ctx:
             symbol_block_net = hybrid_block_to_symbol_block(
                 hb=self.prediction_net,
