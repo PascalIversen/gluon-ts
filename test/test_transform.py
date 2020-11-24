@@ -114,6 +114,27 @@ def test_align_timestamp():
         )
 
 
+def test_add_method():
+    chain = transform.AddTimeFeatures(
+        start_field=FieldName.START,
+        target_field=FieldName.TARGET,
+        output_field="time_feat",
+        time_features=[
+            time_feature.DayOfWeek(),
+            time_feature.DayOfMonth(),
+            time_feature.MonthOfYear(),
+        ],
+        pred_length=24,
+    ) + transform.AddAgeFeature(
+        target_field=FieldName.TARGET,
+        output_field="age",
+        pred_length=24,
+        log_scale=True,
+    )
+
+    assert isinstance(chain, transform.Chain)
+
+
 @pytest.mark.parametrize("is_train", TEST_VALUES["is_train"])
 @pytest.mark.parametrize("target", TEST_VALUES["target"])
 @pytest.mark.parametrize("start", TEST_VALUES["start"])
@@ -898,6 +919,7 @@ def test_AddObservedIndicator():
     array_values = [
         np.array([np.nan, 1.0, 1.0, np.nan, 2.0, np.nan, 1.0, np.nan]),
         np.array([np.nan]),
+        np.array([np.nan, np.nan, np.nan, np.nan, np.nan]),
         np.array([10.0]),
     ]
 
@@ -923,31 +945,37 @@ def test_AddObservedIndicator():
         "dummy_value": [
             np.array([0.0, 1.0, 1.0, 0.0, 2.0, 0.0, 1.0, 0.0]),
             np.array([0.0]),
+            np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             np.array([10.0]),
         ],
         "mean": [
             np.array([1.25, 1.0, 1.0, 1.25, 2.0, 1.25, 1.0, 1.25]),
             np.array([0.0]),
+            np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             np.array([10.0]),
         ],
         "causal_mean": [
             np.array([1.0, 1.0, 1.0, 1.0, 2.0, 1.2, 1.0, 9 / 7]),
             np.array([0.0]),
+            np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             np.array([10.0]),
         ],
         "last_value": [
             np.array([1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
             np.array([0.0]),
+            np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             np.array([10.0]),
         ],
         "rolling_mean10": [
             np.array([1.0, 1.0, 1.0, 1.0, 2.0, 1.1, 1.0, 1.2]),
             np.array([0.0]),
+            np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             np.array([10.0]),
         ],
         "rolling_mean1": [
             np.array([1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
             np.array([0.0]),
+            np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             np.array([10.0]),
         ],
     }
@@ -955,6 +983,7 @@ def test_AddObservedIndicator():
     expected_missindicators = [
         np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0]),
         np.array([0.0]),
+        np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
         np.array([1.0]),
     ]
 

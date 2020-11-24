@@ -36,6 +36,7 @@ from gluonts.mx.distribution import (
     DirichletMultinomial,
     Categorical,
     ZeroAndOneInflatedBeta,
+    ZeroInflatedPoissonOutput,
 )
 from gluonts.core.serde import dump_json, load_json, dump_code, load_code
 from gluonts.model.tpp.distribution import Loglogistic, Weibull

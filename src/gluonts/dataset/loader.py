@@ -23,58 +23,11 @@ import sys
 from queue import Empty
 
 from gluonts.dataset.common import DataEntry, DataBatch, Dataset
-from gluonts.dataset.util import MPWorkerInfo, batcher
-from gluonts.transform import Transformation
-from gluonts.transform.dataset import TransformedDataset
+from gluonts.dataset.util import MPWorkerInfo
+from gluonts.itertools import batcher, cyclic, pseudo_shuffled
+from gluonts.transform import Transformation, TransformedDataset
 
 logger = logging.getLogger(__name__)
-
-
-class Cycle(Iterable):
-    def __init__(self, iterable: Iterable) -> None:
-        self.iterable = iterable
-
-    def __iter__(self):
-        while True:
-            yield from self.iterable
-
-
-class PseudoShuffledIterator(Iterator):
-    """
-    A wrapper class which takes a serialized iterator as an input and generates a
-    pseudo randomized iterator using the same elements from the input iterator.
-    """
-
-    def __init__(self, iterator: Iterator, shuffle_buffer_length: int):
-        self.shuffle_buffer: List = []
-        self.shuffle_buffer_length = shuffle_buffer_length
-        self.iterator = iterator
-
-    def __next__(self):
-        # If the buffer is empty, fill the buffer first.
-        if not self.shuffle_buffer:
-            self.shuffle_buffer = list(
-                itertools.islice(self.iterator, self.shuffle_buffer_length)
-            )
-
-        # If buffer still empty, means all elements used, return a signal of
-        # end of iterator
-        if not self.shuffle_buffer:
-            raise StopIteration
-
-        # Choose an element at a random index and yield it and fill it with
-        # the next element in the sequential generator
-        idx = random.randrange(len(self.shuffle_buffer))
-        next_sample = self.shuffle_buffer[idx]
-
-        # Replace the index with the next element in the iterator if the
-        # iterator has not finished. Delete the index otherwise.
-        try:
-            self.shuffle_buffer[idx] = next(self.iterator)
-        except StopIteration:
-            del self.shuffle_buffer[idx]
-
-        return next_sample
 
 
 def construct_training_iterator(
@@ -84,13 +37,13 @@ def construct_training_iterator(
     shuffle_buffer_length: Optional[int] = None,
 ) -> Iterator[DataEntry]:
     transformed_dataset = TransformedDataset(
-        Cycle(dataset), transform, is_train=True,
+        cyclic(dataset), transform, is_train=True,
     )
 
     if shuffle_buffer_length is None:
         return iter(transformed_dataset)
     else:
-        return PseudoShuffledIterator(
+        return pseudo_shuffled(
             iter(transformed_dataset),
             shuffle_buffer_length=shuffle_buffer_length,
         )
@@ -228,14 +181,14 @@ class DataLoader(Iterable[DataBatch]):
     pass
 
 
-def win32_guard(num_worker: Optional[int]) -> Optional[int]:
-    if sys.platform == "win32":
+def win32_guard(num_workers: Optional[int]) -> Optional[int]:
+    if num_workers and sys.platform == "win32":
         logger.warning(
             "Multiprocessing is not supported on Windows, "
             "num_workers will be set to None."
         )
         return None
-    return num_worker
+    return num_workers
 
 
 class TrainDataLoader(DataLoader):
@@ -259,7 +212,7 @@ class TrainDataLoader(DataLoader):
         self.num_prefetch = num_prefetch
         self.shuffle_buffer_length = shuffle_buffer_length
 
-        if self.num_workers is None:
+        if not self.num_workers:
             iterator = construct_training_iterator(
                 dataset,
                 transform=transform,
