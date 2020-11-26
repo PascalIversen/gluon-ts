@@ -116,9 +116,9 @@ class Trainer:
         batch_size: int = 32,
         num_batches_per_epoch: int = 50,
         learning_rate: float = 1e-3,
-        learning_rate_decay_factor: Optional[int] = None,
-        patience: Optional[int] = None,
-        minimum_learning_rate: Optional[int] = None,
+        learning_rate_decay_factor: float = 0.5,
+        patience: int = 10,
+        minimum_learning_rate: float = 5e-5,
         clip_gradient: float = 10.0,
         weight_decay: float = 1e-8,
         init: Union[str, mx.initializer.Initializer] = "xavier",
@@ -256,7 +256,7 @@ class Trainer:
 
             first_forward = True
 
-            def loop(  # todo call run epoch
+            def loop(  # todo call run epoch and refactor out of call method
                 epoch_no, batch_iter, is_training: bool = True
             ) -> mx.metric.Loss:
                 nonlocal first_forward
