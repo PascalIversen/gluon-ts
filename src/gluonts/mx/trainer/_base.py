@@ -136,7 +136,7 @@ class Trainer:
             ]
         ),
     ) -> None:
-
+        # TODO param disable_default_callbacks to get backwards compatibility
         # deprecation warnings:
         if learning_rate_decay_factor is not None:
             warnings.warn(
